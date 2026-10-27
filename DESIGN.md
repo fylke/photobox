@@ -1,6 +1,6 @@
 # Photobox Design Document
 
-Status: Draft. Derived from issues #1–#17 in `fylke/photobox`. Where an issue is vague, the open questions are listed in section 14.
+Status: Draft. Derived from issues #1–#21 in `fylke/photobox`. Where an issue is vague, the open questions are listed in section 14.
 
 ## 1. Goals
 
@@ -10,6 +10,7 @@ A photo booth that runs on a Raspberry Pi with a camera attached.
 - **Screen optional:** the normal setup has a local screen for previews, but everything must work headless.
 - **Phone-friendly:** a phone can act as controller, preview screen, and configuration UI (#7, #12, #13).
 - **Graceful degradation:** every optional capability (screen, flash/LEDs, buttons, DSLR, network, sharing services) has a fallback, and the booth never refuses to take photos because an optional part is missing.
+- **Interoperable and installable:** the booth can be assembled from documented hardware profiles, and exposes a stable integration boundary for common home-automation systems.
 
 Non-goals (for now): cloud hosting, multi-tenant SaaS, video recording beyond short GIFs.
 
@@ -34,6 +35,10 @@ Non-goals (for now): cloud hosting, multi-tenant SaaS, video recording beyond sh
 | 15 | Upvote and report pictures on an auxiliary screen | 6.5, 6.6 |
 | 16 | Every screen beyond the first is auxiliary | 6.2 |
 | 17 | Server management interface shows software versions and available updates | 8.4 |
+| 18 | Resolve design comments: strips, admin access, phone album, upvotes, selfies, printing and priorities | 4.1, 6.2, 6.5, 6.8, 7.1, 8.5, 10, 14, 15 |
+| 19 | View the current album on a phone, with swipe navigation and no timer | 6.7, 8.5 |
+| 20 | Provide an IKEA-style setup guide for every hardware profile | 4.1 |
+| 21 | Integrate with common home-automation protocols and products | 10.2 |
 
 ## 3. Architecture Overview
 
@@ -73,6 +78,20 @@ The booth detects what is present at startup and on hot-plug, and runs in the be
 | Headless DSLR | DSLR | none | optional | Phone preview or no preview; control via button or phone |
 
 Target hardware: Raspberry Pi 4 or 5 (Pi 3 supported at reduced preview resolution/frame rate).
+
+### 4.1 Assembly and setup guide (#20)
+
+The project ships an illustrated, step-by-step setup guide in the same order as the physical assembly. It is written for non-specialists and includes a parts checklist, cable and connector labels, mounting diagrams, a wiring diagram, software installation, first boot, pairing, and a test procedure. Each step has a checkbox and a visible expected result; optional steps are marked with the hardware profiles they support.
+
+The guide has one common base path and profile-specific branches:
+
+1. Mount the Pi, camera, screen, lights and controls, then connect power with the Pi powered off.
+2. Select the profile (Minimal, Standard, Full or Headless DSLR) and follow only its camera, screen and lighting branch.
+3. Install the supported OS image and Photobox package, start the first-run wizard, and connect by `photobox.local` or the printed setup QR code.
+4. Run hardware detection and the guided test for camera capture, preview, screen, buttons, lights, storage and network.
+5. Secure the enclosure and cables, record the device name, and run a test session before the event.
+
+The guide explicitly covers both USB/CSI webcams and Canon/Sony A7-class cameras using gphoto2, including compatible cables, power requirements, camera mode, USB permissions, and troubleshooting. It never requires an optional component: omitted hardware is skipped and its fallback is shown.
 
 ## 5. Camera Subsystem
 
@@ -143,10 +162,13 @@ There are two screen classes:
 Rules:
 - There is exactly one primary screen at a time. It is the first screen to register (in practice the local kiosk screen).
 - Any further screen connected is automatically auxiliary (#16). The admin may promote one to primary, which demotes the current primary.
+- The first successfully paired local screen becomes primary only after the host confirms the pairing. Until then it is setup-only and cannot control capture. A primary change requires an authenticated admin action.
 - Camera bindings (#1) matter mainly for the primary screen, as that is where preview is shown. Auxiliary screens do not show a live preview.
 - A phone used as a preview screen (6.3) is a temporary primary-style preview client. It does not replace the primary screen.
 - If the primary screen disappears, the booth keeps working through phone control (8.2) and hardware buttons. An auxiliary screen is never promoted automatically, and the admin is notified in the phone UI.
 - With only one screen, it is primary. The showcase is then shown on it while idle, if enabled.
+
+Admin access is separate from ordinary guest control. The setup page is reachable through a short-lived configuration QR code containing a one-time pairing token, or through a PIN entered on the local screen/status page. The first paired host is the initial administrator; it can issue expiring admin invitations as QR codes or one-time tokens to additional phones. Tokens are scoped to the event/booth, revocable, stored hashed, and never included in logs or normal guest URLs. Guest tokens cannot access setup, logs, deletion, updates or other sessions.
 
 ### 6.3 Phone as preview screen (#13)
 
@@ -167,6 +189,9 @@ The auxiliary screen cycles through the photos taken so far (newest first, then 
 - **Duplicates:** a vote button press is counted once per photo per short interval. Votes are anonymous, so unlimited button presses cannot be fully prevented. A cooldown limits abuse. Per-device limits apply to QR votes.
 - **Fallback:** without a physical button, a touchscreen tap on the photo, or a QR vote, is used. Without any of these, the showcase is view-only.
 - Votes are stored per photo and can rank a "most popular" view in the gallery.
+- The showcase scheduler weights photos by their upvote count, so popular photos appear more often without excluding newer or unvoted photos. The weighting and minimum-new-photo rule are configurable.
+
+The physical upvote button is an independent networked accessory, not a GPIO device attached to the display. Each button has a device identity and is paired to one auxiliary screen. Pressing it sends an authenticated `upvote(photo_id, screen_id)` event to the booth API; it does not connect to the screen through GPIO. The auxiliary screen subscribes to the event bus and shows the animation only when its `screen_id` matches. A button can therefore be placed near any screen with a small network-capable controller, while the booth remains the single authority for cooldowns, vote storage and photo identity. Loss of the accessory or network changes only voting; the showcase continues.
 
 ### 6.6 Reporting flow (#2, #15)
 
@@ -176,9 +201,17 @@ Reporting is deliberately a multi-step flow, so it can't be done accidentally:
 2. The showcase **pauses** on that photo and shows a **report QR code**. The pause lasts **1 minute** (configurable), after which the showcase resumes whether or not the QR was scanned.
 3. Scanning the QR opens a page with a **required text field** asking the guest to give a reason for the report. The link remains valid after the showcase has resumed, so the guest can write the reason at their own pace (suggested expiry: 15 minutes, configurable).
 4. A submitted report is stored with the reason and marked pending. By default a pending report hides the photo from the showcase and blocks auto-publishing (10) until an admin reviews it. This is configurable.
-5. The admin reviews reports in the phone UI (8.1) and either dismisses the report or deletes/hides the photo.
+5. Every administrator receives the review notification. Any one administrator may dismiss the report or delete/hide the photo; no unanimous decision or second approval is required.
 
 If a report is triggered but never completed, the photo is not hidden or flagged. Only one report flow can be active per auxiliary screen at a time, and further report triggers are ignored during the pause.
+
+### 6.7 Phone album view (#19)
+
+The guest gallery is available from the event QR code whether or not an auxiliary screen exists. It shows the current event album and the latest photo, with swipe/previous/next navigation through photos, upvote, download and report controls. Album navigation is user-driven and has no slideshow timer. A phone may remain on this view while the booth captures more photos; the client receives updates over WebSocket/SSE and keeps its current position unless the user chooses “latest”. Access is limited to the paired event token and the guest privacy rules in section 12.
+
+### 6.8 Guest selfie uploads (#18)
+
+Selfies are a separate, optional event feature rather than a replacement for the booth preview. A guest scans the event QR code, grants the browser camera permission, takes a selfie, reviews it, and submits it to the event album. The server validates type, size and image dimensions, strips metadata, applies the event's moderation/report rules, and marks the upload as guest-provided. Uploads are disabled by default, can be enabled per event by an admin, and never require the phone to become a capture camera for the booth.
 
 ## 7. Capture and Media Pipeline
 
@@ -191,7 +224,7 @@ Idle -> Armed (trigger received) -> Countdown -> Capture -> Review
 
 Triggers: touchscreen, phone, hardware button, keyboard, HTTP call. Timeouts return the booth to Idle if a user abandons a session.
 
-A session has: a mode (`photo`, `strip`, `gif`), the number of shots, the countdown length, a frame/template, and the list of cameras.
+A session has: a mode (`photo`, `strip`, `gif`), the number of shots, the countdown length, a frame/template, and the list of cameras. `strip` means one composed output image containing multiple separately captured photos arranged in ordered slots (typically a vertical or horizontal photobooth strip); it is not a video or a single camera burst. Each slot can have its own crop, and the originals remain available alongside the composed strip.
 
 ### 7.2 Animated GIFs (#10)
 
@@ -267,6 +300,14 @@ As an extra feature, updating can be started from the same page:
 - If an update fails or the network is lost midway, the previous version stays active.
 - Fallback: without the update feature (or for users who want full control), the page remains read-only and the same information is available from the CLI.
 
+### 8.5 Phone album and guest access (#19)
+
+The event QR code opens the album view (6.7) directly. Guests can swipe through the current album, upvote, download a permitted photo, or submit a report without needing an auxiliary screen. The same view is linked from the auxiliary and primary screens. It deliberately has no automatic timer: a phone user controls navigation, while a screen slideshow remains governed by the auxiliary-screen dwell setting.
+
+### 8.6 Guest selfie uploads (#18)
+
+Selfies are a separate, optional event feature rather than a replacement for the booth preview. A guest scans the event QR code, grants the browser camera permission, takes a selfie, reviews it, and submits it to the event album. The server validates type, size and image dimensions, strips metadata, applies the event's moderation/report rules, and marks the upload as guest-provided. Uploads are disabled by default, can be enabled per event by an admin, and never require the phone to become a capture camera for the booth.
+
 ## 9. Hardware I/O
 
 ### 9.1 Buttons and rotary encoder (#9)
@@ -294,7 +335,7 @@ The light is synchronised with capture: the ramp goes to full brightness (or the
 
 Countdown output uses a `CountdownIndicator` abstraction with LED patterns (e.g. fill/blink/colour per second). Fallbacks, in order: LEDs, on-screen digits, audio beeps/speech, phone display/vibration. Multiple indicators may run at once.
 
-## 10. Sharing and Integrations (#6)
+## 10. Sharing and Integrations (#6, #21)
 
 A plugin interface `SharePlugin` with `authorize()`, `publish(media, caption)`, and `status()`.
 
@@ -309,6 +350,18 @@ Important constraints:
 - Publishing is queued with retries. If the network is down, uploads wait and the booth continues taking photos. The user sees "queued" status.
 - Posting is opt-in per session; the host can enable auto-publish for an event. A photo with a pending report (6.6) is held back from publishing.
 - Credentials are stored on the Pi only and never logged.
+
+### 10.1 Social sharing priority
+
+The first version prioritises the local gallery, QR download, email and generic webhooks. Social publishing (including Instagram) is a later milestone and remains opt-in, best-effort and subject to each provider's current API and account requirements. Printing is also a possible future milestone, implemented as a queue of rendered media sent to a configured local/network printer; it is not required for the first release.
+
+### 10.2 Home-automation integration (#21)
+
+The daemon exposes an event and command adapter rather than coupling the core to one vendor. The initial adapters target **MQTT** (including Home Assistant discovery), **Home Assistant's REST/WebSocket API**, and **Webhooks** for products that support HTTP callbacks. Adapters are optional plugins and can be disabled completely.
+
+Published state includes availability, current session state, camera/screen connectivity, current event, latest photo id, vote/report counts and update status. Events include `session.started`, `countdown.started`, `capture.completed`, `media.ready`, `report.created`, `session.finished` and `fault.changed`. Commands are deliberately limited to safe, authenticated actions such as start/stop session, set light scene, display a message and request a gallery link; destructive actions and admin/update operations are never exposed by default.
+
+Each adapter has configurable credentials, an allowlist of commands, rate limits, retry/backoff and an offline queue. Payloads contain opaque photo/session ids and no credentials. The integration uses a versioned JSON schema so future protocol adapters can map the same events without changing capture behavior.
 
 ## 11. Debug Logging (#8)
 
@@ -346,16 +399,12 @@ These are proposals and can be revised before implementation.
 
 ## 14. Open Questions
 
-1. Is a touchscreen assumed for the local screen, or just a display with buttons? (Affects UI sizes and defaults.)
-2. Which DSLR models must be supported first (gphoto2 support varies)?
-3. Should a phone's camera ever be usable as a *capture* camera, or only as a preview (#13 only asks for preview)?
-4. How far should social integration (#6) go? Is Instagram a hard requirement, or are gallery links and generic cloud/webhook sharing sufficient for v1?
-5. What should upvotes be used for beyond the showcase, e.g. a "most popular" gallery or a highlighted photo? Who gets notified of reports, and is review by one admin enough?
-6. Is printing wanted (not in any issue)?
-7. The labels are now `area:screen`, `area:server`, `hardware` and `ui`. Is that the intended component split? This document assumes screen = client UI and server = daemon.
-8. Do upvote buttons live on the auxiliary screen's hardware (which needs GPIO on that screen's host), or can the auxiliary screen be a separate device? This affects whether an auxiliary screen is a browser on the Pi or a remote client with its own input.
-9. Report-flow timings (1 minute pause, link expiry) are taken from #15, but the link expiry is my assumption. Is the default reasonable?
-10. How far should the update feature (#17) go: only report available updates, or also apply them? The design proposes doing both, with explicit admin action.
+1. Which DSLR models beyond Canon and Sony A7-class cameras must be certified first (gphoto2 support varies)?
+2. Should a phone's camera ever be usable as a *capture* camera, or only as a preview (#13 only asks for preview)?
+3. Which printer protocols and models should be prioritised when printing is scheduled for a future milestone?
+4. Which additional home-automation products should receive first-party adapters after MQTT, Home Assistant and webhooks?
+5. Report-flow timings (1 minute pause, link expiry) are taken from #15, but the link expiry is my assumption. Is the default reasonable?
+6. How far should the update feature (#17) go: only report available updates, or also apply them? The design proposes doing both, with explicit admin action.
 
 ## 15. Suggested Milestones
 
@@ -366,4 +415,6 @@ These are proposals and can be revised before implementation.
 5. **Hardware:** buttons/encoder (#9), lights/flash (#5), LED countdown (#11).
 6. **Screens and showcase:** primary/auxiliary classes (#14, #16), showcase slideshow, upvoting (#15), reporting flow and admin review (#15, #2).
 7. **Setup and ops:** full phone-based setup (#7), debug log streaming (#8), version overview (#17), retention and backups.
-8. **Sharing and updates:** plugin framework and the first service(s) (#6), then the update feature of #17 (read-only version display ships in milestone 7).
+8. **Sharing and updates:** local gallery, generic webhooks and email first; social services later; then the update feature of #17 (read-only version display ships in milestone 7).
+9. **Operations and integrations:** publish the illustrated hardware setup guide, add MQTT/Home Assistant/webhook adapters, and expose the phone album as the default event landing page.
+10. **Future hardware:** printing support and additional certified camera/printer integrations.
