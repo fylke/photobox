@@ -191,7 +191,9 @@ The auxiliary screen cycles through the photos taken so far (newest first, then 
 - Votes are stored per photo and can rank a "most popular" view in the gallery.
 - The showcase scheduler weights photos by their upvote count, so popular photos appear more often without excluding newer or unvoted photos. The weighting and minimum-new-photo rule are configurable.
 
-The physical upvote button is an independent networked accessory, not a GPIO device attached to the display. Each button has a device identity and is paired to one auxiliary screen. Pressing it sends an authenticated `upvote(photo_id, screen_id)` event to the booth API; it does not connect to the screen through GPIO. The auxiliary screen subscribes to the event bus and shows the animation only when its `screen_id` matches. A button can therefore be placed near any screen with a small network-capable controller, while the booth remains the single authority for cooldowns, vote storage and photo identity. Loss of the accessory or network changes only voting; the showcase continues.
+The physical upvote button is an independent networked accessory, not a GPIO device attached to the display. Each button has a device identity and is paired to one auxiliary screen. Pressing it sends an authenticated `upvote(screen_id)` event to the booth API. The server resolves `screen_id` to the photo currently shown on that screen and records the vote; the button does not need to know the photo id. The auxiliary screen subscribes to the event bus and shows the animation only when its `screen_id` matches. A button can therefore be placed near any screen with a small network-capable controller, while the booth remains the single authority for cooldowns, vote storage and photo identity. Loss of the accessory or network changes only voting; the showcase continues.
+
+Phone and QR upvotes include the explicit `photo_id` selected by the user, because the user controls which album photo is being viewed. The server checks that the photo belongs to the event before applying the same rate limits and vote rules.
 
 ### 6.6 Reporting flow (#2, #15)
 
@@ -399,12 +401,12 @@ These are proposals and can be revised before implementation.
 
 ## 14. Open Questions
 
-1. Which DSLR models beyond Canon and Sony A7-class cameras must be certified first (gphoto2 support varies)?
-2. Should a phone's camera ever be usable as a *capture* camera, or only as a preview (#13 only asks for preview)?
-3. Which printer protocols and models should be prioritised when printing is scheduled for a future milestone?
-4. Which additional home-automation products should receive first-party adapters after MQTT, Home Assistant and webhooks?
-5. Report-flow timings (1 minute pause, link expiry) are taken from #15, but the link expiry is my assumption. Is the default reasonable?
-6. How far should the update feature (#17) go: only report available updates, or also apply them? The design proposes doing both, with explicit admin action.
+1. **Resolved for v1:** certify Canon and Sony A7-class cameras first; broader gphoto2 coverage can follow.
+2. **Resolved for v1:** a phone camera is used only for the separate guest-selfie feature (6.8/8.6), not as a booth capture camera or general preview source.
+3. Which printer protocols and models should be prioritised when printing is scheduled for a future milestone? **Deferred.**
+4. Which additional home-automation products should receive first-party adapters after MQTT, Home Assistant and webhooks? **Deferred.**
+5. **Resolved:** use a one-minute showcase pause and a configurable 15-minute report-link expiry by default.
+6. **Resolved:** updates may be applied only after an explicit admin action; they are never automatic.
 
 ## 15. Suggested Milestones
 
@@ -415,6 +417,6 @@ These are proposals and can be revised before implementation.
 5. **Hardware:** buttons/encoder (#9), lights/flash (#5), LED countdown (#11).
 6. **Screens and showcase:** primary/auxiliary classes (#14, #16), showcase slideshow, upvoting (#15), reporting flow and admin review (#15, #2).
 7. **Setup and ops:** full phone-based setup (#7), debug log streaming (#8), version overview (#17), retention and backups.
-8. **Sharing and updates:** local gallery, generic webhooks and email first; social services later; then the update feature of #17 (read-only version display ships in milestone 7).
-9. **Operations and integrations:** publish the illustrated hardware setup guide, add MQTT/Home Assistant/webhook adapters, and expose the phone album as the default event landing page.
+8. **Operations and integrations:** publish the illustrated hardware setup guide, add MQTT/Home Assistant/webhook adapters, and expose the phone album as the default event landing page.
+9. **Sharing and updates:** local gallery, generic webhooks and email first; social services later; then the update feature of #17 (read-only version display ships in milestone 7).
 10. **Future hardware:** printing support and additional certified camera/printer integrations.
