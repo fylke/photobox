@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#eef1eb">
+  <title>Photobox</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Trebuchet MS", "Gill Sans", sans-serif;
+      color: #202a27;
+      background: #eef1eb;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+      --ink: #202a27;
+      --muted: #64716b;
+      --line: #d3dbd3;
+      --paper: #fbfcf8;
+      --green: #266d56;
+      --coral: #c34e38;
+      --warning: #965d12;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-width: 320px;
+      min-height: 100vh;
+      margin: 0;
+      background-color: #eef1eb;
+      background-image: radial-gradient(#d8dfd7 0.7px, transparent 0.7px);
+      background-size: 17px 17px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 70px;
+      padding: 16px clamp(20px, 5vw, 64px);
+      border-bottom: 1px solid var(--line);
+      background: rgb(251 252 248 / 92%);
+    }
+
+    .brand { display: flex; align-items: baseline; gap: 12px; }
+    .brand strong { font-family: Georgia, serif; font-size: 23px; font-weight: 600; }
+    .brand span, .connection { color: var(--muted); font-size: 12px; }
+    .connection { display: flex; align-items: center; gap: 8px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: #aab4ad; }
+    .dot.online { background: var(--green); }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(270px, 0.85fr);
+      width: min(100% - 40px, 980px);
+      margin: clamp(36px, 8vh, 80px) auto;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--paper);
+      box-shadow: 0 16px 42px rgb(32 42 39 / 7%);
+      animation: arrive 360ms ease-out both;
+    }
+
+    section { padding: clamp(25px, 5vw, 48px); }
+    .session { border-right: 1px solid var(--line); }
+    .eyebrow {
+      margin: 0 0 14px;
+      color: var(--green);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    h1, h2 { margin: 0; font-family: Georgia, serif; font-weight: 500; }
+    h1 { font-size: clamp(34px, 5vw, 50px); line-height: 1.08; }
+    h2 { margin-bottom: 26px; font-size: 26px; }
+    .detail { min-height: 24px; margin: 12px 0 24px; color: var(--muted); }
+    .countdown { min-height: 24px; color: var(--coral); font-weight: 700; }
+
+    .preview {
+      display: grid;
+      min-height: 120px;
+      place-items: center;
+      margin: 22px 0;
+      overflow: hidden;
+      border: 1px dashed var(--line);
+      border-radius: 4px;
+      background: #f2f5ef;
+    }
+
+    .preview img { display: block; width: 100%; max-height: 320px; object-fit: contain; }
+    .preview p { padding: 18px; color: var(--muted); text-align: center; }
+    .downloads { display: flex; flex-wrap: wrap; gap: 8px 18px; min-height: 20px; }
+    .downloads a { color: var(--green); font-size: 14px; font-weight: 700; }
+    label { display: block; margin: 0 0 8px; font-size: 14px; font-weight: 700; }
+    .field { margin-bottom: 22px; }
+
+    input {
+      width: 100%;
+      min-height: 46px;
+      padding: 9px 12px;
+      border: 1px solid #aeb9b0;
+      border-radius: 3px;
+      background: white;
+      color: var(--ink);
+      font: inherit;
+    }
+
+    button {
+      min-height: 48px;
+      padding: 0 20px;
+      border: 0;
+      border-radius: 3px;
+      background: var(--coral);
+      color: white;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button.secondary { background: var(--green); }
+    button:disabled { opacity: 0.55; cursor: wait; }
+    button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid #e6a544; outline-offset: 3px; }
+    [hidden] { display: none !important; }
+    .error { margin-top: 16px; color: #a53025; font-size: 14px; }
+
+    @keyframes arrive {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 680px) {
+      main { grid-template-columns: 1fr; margin-top: 24px; }
+      .session { border-right: 0; border-bottom: 1px solid var(--line); }
+      header { min-height: 62px; }
+      .brand span { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand"><strong>Photobox</strong><span>CAPTURE STATION</span></div>
+    <div class="connection"><span id="connection-dot" class="dot"></span><span id="camera-label">Connecting</span></div>
+  </header>
+
+  <main>
+    <section class="session" aria-live="polite">
+      <p class="eyebrow">Current session</p>
+      <h1 id="state-title">Ready</h1>
+      <p id="state-detail" class="detail">Set up a session when you are ready.</p>
+      <p id="countdown" class="countdown" aria-live="assertive"></p>
+      <div id="preview" class="preview"><p>Your captured photos will appear here.</p></div>
+      <div id="downloads" class="downloads"></div>
+      <p id="error" class="error" role="alert" hidden></p>
+      <button id="continue-button" class="secondary" type="button" hidden>Continue</button>
+    </section>
+
+    <section class="controls">
+      <p class="eyebrow">Capture controls</p>
+      <h2>Make a photo set</h2>
+      <form id="session-form">
+        <div class="field">
+          <label for="shots">Photos in this set</label>
+          <input id="shots" name="shots" type="number" min="1" max="8" value="4" required>
+        </div>
+        <div class="field">
+          <label for="countdown-seconds">Countdown, in seconds</label>
+          <input id="countdown-seconds" name="countdown_seconds" type="number" min="0" max="10" value="3" required>
+        </div>
+        <button id="start-button" type="submit">Start session</button>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    const form = document.querySelector("#session-form");
+    const startButton = document.querySelector("#start-button");
+    const continueButton = document.querySelector("#continue-button");
+    const stateTitle = document.querySelector("#state-title");
+    const stateDetail = document.querySelector("#state-detail");
+    const countdown = document.querySelector("#countdown");
+    const preview = document.querySelector("#preview");
+    const downloads = document.querySelector("#downloads");
+    const errorMessage = document.querySelector("#error");
+    const settings = form.querySelectorAll("input");
+    let currentSession = null;
+    let busy = false;
+
+    async function request(url, options) {
+      const response = await fetch(url, options);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "The request could not be completed.");
+      return body;
+    }
+
+    function render(session) {
+      currentSession = session;
+      const state = session?.state;
+      const titles = {
+        armed: "Starting",
+        countdown: "Get ready",
+        capturing: "Capturing",
+        review: "Review photo",
+        composing: "Finishing",
+        done: "Session complete"
+      };
+      stateTitle.textContent = state ? titles[state] : "Ready";
+      stateDetail.textContent = state === "review"
+        ? `Photo ${session.shots_taken} of ${session.shots_total} captured.`
+        : state === "done"
+          ? `${session.shots_taken} photos saved to this session.`
+          : state
+            ? "Keep your pose; the session is in progress."
+            : "Set up a session when you are ready.";
+      startButton.hidden = Boolean(state && state !== "done");
+      continueButton.hidden = state !== "review" && state !== "capturing";
+      continueButton.textContent = state === "capturing" ? "Retry capture" : "Continue";
+      for (const input of settings) input.disabled = Boolean(state && state !== "done");
+      downloads.replaceChildren();
+
+      if (session?.photo_ids?.length) {
+        const latestPhoto = session.photo_ids[session.photo_ids.length - 1];
+        const image = document.createElement("img");
+        image.src = `/api/sessions/${session.id}/photos/${latestPhoto}?download=false`;
+        image.alt = `Latest photo, shot ${session.shots_taken}`;
+        image.onerror = () => {
+          const fallback = document.createElement("p");
+          fallback.textContent = "Preview unavailable in this image format. Download the photo to view it.";
+          preview.replaceChildren(fallback);
+        };
+        preview.replaceChildren(image);
+
+        session.photo_ids.forEach((photoId, index) => {
+          const link = document.createElement("a");
+          link.href = `/api/sessions/${session.id}/photos/${photoId}`;
+          link.download = "";
+          link.textContent = `Download photo ${index + 1}`;
+          downloads.append(link);
+        });
+      } else {
+        preview.innerHTML = "<p>Your captured photos will appear here.</p>";
+      }
+
+      startButton.disabled = busy;
+      continueButton.disabled = busy;
+      errorMessage.hidden = true;
+    }
+
+    async function advance() {
+      const session = await request(`/api/sessions/${currentSession.id}/advance`, { method: "POST" });
+      render(session);
+      return session;
+    }
+
+    const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+    async function runFlow(session) {
+      busy = true;
+      render(session);
+      try {
+        if (session.state === "armed") session = await advance();
+        if (session.state === "countdown") {
+          for (let remaining = session.countdown_seconds; remaining > 0; remaining -= 1) {
+            countdown.textContent = String(remaining);
+            await wait(1000);
+          }
+          countdown.textContent = "";
+          session = await advance();
+        }
+        if (session.state === "capturing" || session.state === "composing") {
+          session = await advance();
+        }
+      } catch (error) {
+        errorMessage.textContent = error.message;
+        errorMessage.hidden = false;
+      } finally {
+        busy = false;
+        render(currentSession);
+      }
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (busy) return;
+      busy = true;
+      startButton.disabled = true;
+      errorMessage.hidden = true;
+      try {
+        const body = {
+          shots: Number(form.elements.shots.value),
+          countdown_seconds: Number(form.elements.countdown_seconds.value)
+        };
+        const session = await request("/api/sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        await runFlow(session);
+      } catch (error) {
+        busy = false;
+        errorMessage.textContent = error.message;
+        errorMessage.hidden = false;
+        render(currentSession);
+      }
+    });
+
+    continueButton.addEventListener("click", async () => {
+      if (busy || !currentSession) return;
+      if (currentSession.state === "capturing") {
+        await runFlow(currentSession);
+        return;
+      }
+      busy = true;
+      continueButton.disabled = true;
+      try {
+        await runFlow(await advance());
+      } catch (error) {
+        busy = false;
+        errorMessage.textContent = error.message;
+        errorMessage.hidden = false;
+        render(currentSession);
+      }
+    });
+
+    async function initialize() {
+      try {
+        const health = await request("/api/health");
+        document.querySelector("#camera-label").textContent = health.camera;
+        document.querySelector("#connection-dot").classList.add("online");
+        const session = await request("/api/session");
+        if (session && ["armed", "countdown", "capturing", "composing"].includes(session.state)) {
+          await runFlow(session);
+        } else {
+          render(session);
+        }
+      } catch (error) {
+        document.querySelector("#camera-label").textContent = "Offline";
+        errorMessage.textContent = error.message;
+        errorMessage.hidden = false;
+      }
+    }
+
+    initialize();
+  </script>
+</body>
+</html>

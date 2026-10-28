@@ -25,6 +25,9 @@ photobox = "photobox.main:run"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+photobox = ["static/*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

@@ -58,3 +58,13 @@ def test_missing_photo_returns_not_found(tmp_path):
     )
 
     assert response.status_code == 404
+
+
+def test_screen_ui_is_served_from_root(tmp_path):
+    client = TestClient(create_app(storage_dir=tmp_path))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Start session" in response.text
+    assert "Continue" in response.text
