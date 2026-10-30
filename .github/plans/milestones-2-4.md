@@ -37,7 +37,7 @@ Do not claim physical camera support from mock/subprocess tests alone.
 5. **Preview:** extend the camera contract and mock camera for a bounded MJPEG stream. Add V4L2 preview via `ffmpeg`, with cleanup on disconnect and a clear no-preview fallback.
 6. **QR onboarding:** show a Wi-Fi join QR separately from the guest invitation QR. The Wi-Fi QR contains only network credentials; the invitation QR contains only a short-lived claim URL/token. Never combine admin PIN, Wi-Fi password, and guest token in one URL/QR.
 
-**Milestone 2 acceptance:** two different phones can reach the service headlessly, claim/pair with the appropriate role, and exercise controller/observer behavior; credentials expire/revoke as specified; the preview stream starts/stops cleanly; mocked AP behavior is tested; the novice setup guide matches the implemented flow. Verify Wi-Fi/AP behavior and phone browser behavior on the supported Pi/OS.
+**Milestone 2 acceptance:** two different phones can reach the service headlessly, claim/pair with the appropriate role, and exercise controller/observer behavior; credentials expire/revoke as specified; the preview stream starts/stops cleanly; mocked AP behavior is tested; the novice setup guide matches the implemented flow. Before calling the milestone complete, run the physical test in [Milestone 2 Hardware Validation](../../docs/hardware-validation-m2.md) on the supported Pi/OS. Record pass/fail/blocked results and sanitized evidence; mocked AP or camera tests do not count as a hardware pass.
 
 ## Milestone 3: Capture quality
 

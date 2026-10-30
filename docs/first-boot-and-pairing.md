@@ -2,6 +2,8 @@
 
 > **Status:** Phone pairing and the local one-time PIN command are implemented for an already-installed host. Per-device image creation, Wi-Fi credential provisioning, Pi hotspot setup, and venue Wi-Fi configuration are still planned. The complete SD-card/hotspot workflow below is not available yet.
 
+Maintainers: the physical acceptance procedure is in [Milestone 2 Hardware Validation](hardware-validation-m2.md). Do not mark the setup flow complete until that checklist passes on the supported Pi/OS.
+
 This guide is for someone setting up a Photobox without needing to know Linux networking or security terminology. It explains what the computer creates, what to put on the Pi, and what the different codes are for.
 
 ## The short version
