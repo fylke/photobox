@@ -23,6 +23,7 @@ dev = [
 [project.scripts]
 photobox = "photobox.main:run"
 photobox-setup-pin = "photobox.provision:main"
+photobox-provision = "photobox.provision:provision_device"
 
 [tool.setuptools.packages.find]
 where = ["src"]

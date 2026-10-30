@@ -1,6 +1,6 @@
 # First Boot and Pairing
 
-> **Status:** Phone pairing and the local one-time PIN command are implemented for an already-installed host. Per-device image creation, Wi-Fi credential provisioning, Pi hotspot setup, and venue Wi-Fi configuration are still planned. The complete SD-card/hotspot workflow below is not available yet.
+> **Status:** Phone pairing, the local one-time PIN command, and a private per-device credential bundle are implemented. The bundle is not yet incorporated into a bootable image. SD-card image creation, Pi hotspot setup, and venue Wi-Fi configuration remain planned, so the complete headless SD-card workflow below is not available yet.
 
 Maintainers: the physical acceptance procedure is in [Milestone 2 Hardware Validation](hardware-validation-m2.md). Do not mark the setup flow complete until that checklist passes on the supported Pi/OS.
 
@@ -29,6 +29,8 @@ This is the supported development flow until per-device images and hotspot setup
 5. Guests can view the active session; one phone controls it. The admin can revoke guest access from the paired-phone list.
 
 The command does not create an SD-card image, configure a Wi-Fi password, start an access point, or connect the Pi to venue Wi-Fi. Do not assume a headless Pi can be reached over Wi-Fi until those networking pieces are implemented.
+
+For maintainers preparing a future per-device image, `photobox-provision --output-dir <new-directory>` creates a private credential bundle containing a Wi-Fi join QR and a manifest with the setup-PIN hash and Wi-Fi settings. The command prints the SSID, Wi-Fi password, and setup PIN once. Keep the directory private. The manifest is not imported by the running daemon yet, and the command does not create a flashable image or configure the Pi’s access point.
 
 ## Three codes, three purposes
 

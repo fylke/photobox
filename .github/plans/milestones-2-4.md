@@ -1,6 +1,6 @@
 # Photobox Implementation Plan: Milestones 2–4
 
-**Status (2026-10-30):** Milestone 1 is implemented in commit `10286a8`; physical webcam verification remains outstanding. Milestone 2 is in progress: setup PIN bootstrap, pairing/invitation API and UI, controller leases, and mock/V4L2 MJPEG preview are implemented. The per-device image builder, Wi-Fi credential provisioning, Pi hotspot, and venue Wi-Fi management are not implemented. Milestones 3–4 have not started.
+**Status (2026-10-30):** Milestone 1 is implemented in commit `10286a8`; physical webcam verification remains outstanding. Milestone 2 is in progress: setup PIN bootstrap, pairing/invitation API and UI, controller leases, mock/V4L2 MJPEG preview, and a private per-device credential bundle with Wi-Fi QR are implemented. The bundle is not consumed by an image builder yet; bootable image creation, applying Wi-Fi settings to the Pi/AP, and venue Wi-Fi management are not implemented. Milestones 3–4 have not started.
 
 This plan is the contributor-facing sequence through the media milestone. The user-facing, beginner-oriented setup workflow is in [First Boot and Pairing](../../docs/first-boot-and-pairing.md). Keep the two documents in sync as implementation decisions become code.
 
@@ -30,7 +30,7 @@ Do not claim physical camera support from mock/subprocess tests alone.
 
 ## Milestone 2: Phone access
 
-1. **Provisioning contract:** build/test a generic image in CI; implement a local per-device provisioning command that emits a flashable image plus the unique one-time 10-digit PIN and Wi-Fi join information. Generate credentials with a cryptographically secure random source; hash the PIN before placing it on the Pi. Ensure secrets are not printed to CI logs, stored in the repository, or recoverable from ordinary application logs.
+1. **Provisioning contract:** build/test a generic image in CI; extend `photobox-provision` to turn its current owner-only credential bundle into a per-device flashable image plus the unique one-time 10-digit PIN and Wi-Fi join information. Generate credentials with a cryptographically secure random source; hash the PIN before placing it on the Pi. Ensure secrets are not printed to CI logs, stored in the repository, or recoverable from ordinary application logs.
 2. **Headless bootstrap and network mode:** bring up the visible setup AP; provide a status/pairing page reachable from a phone/laptop. Connect to configured venue Wi-Fi when available and disable the AP after verifying reachability. Otherwise retain the AP. Keep NetworkManager operations in a replaceable adapter and make failure/fallback state visible.
 3. **Admin claim and guest pairing:** claim the booth with the one-time PIN, then allow the admin to issue short-lived guest invitations. Implement expiry, revocation, per-role authorization, rate limiting, and safe cookie/origin behavior before enabling guest control.
 4. **Phone controller:** reuse the static frontend for phone-sized session start, state/review, and download flows. Enforce one controller per active session; observers remain read-only. Add 60-second inactivity takeover and 12-hour default guest expiry, both configurable.
