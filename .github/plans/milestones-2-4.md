@@ -1,6 +1,6 @@
 # Photobox Implementation Plan: Milestones 2–4
 
-**Status (2026-10-30):** Milestone 1 is implemented in commit `10286a8`. Milestones 2–4 are planned, not implemented. Physical webcam verification is still outstanding because the development environment has no V4L2 device or `ffmpeg` executable.
+**Status (2026-10-30):** Milestone 1 is implemented in commit `10286a8`; physical webcam verification remains outstanding. Milestone 2 is in progress: setup PIN bootstrap, pairing/invitation API and UI, controller leases, and mock/V4L2 MJPEG preview are implemented. The per-device image builder, Wi-Fi credential provisioning, Pi hotspot, and venue Wi-Fi management are not implemented. Milestones 3–4 have not started.
 
 This plan is the contributor-facing sequence through the media milestone. The user-facing, beginner-oriented setup workflow is in [First Boot and Pairing](../../docs/first-boot-and-pairing.md). Keep the two documents in sync as implementation decisions become code.
 

@@ -94,6 +94,9 @@
     .preview p { padding: 18px; color: var(--muted); text-align: center; }
     .downloads { display: flex; flex-wrap: wrap; gap: 8px 18px; min-height: 20px; }
     .downloads a { color: var(--green); font-size: 14px; font-weight: 700; }
+    .guest-list { margin: 22px 0 0; padding: 0; list-style: none; }
+    .guest-list li { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 14px; }
+    .guest-list button { min-height: 36px; padding: 0 12px; background: var(--green); }
     label { display: block; margin: 0 0 8px; font-size: 14px; font-weight: 700; }
     .field { margin-bottom: 22px; }
 
@@ -149,16 +152,50 @@
     <div class="connection"><span id="connection-dot" class="dot"></span><span id="camera-label">Connecting</span></div>
   </header>
 
-  <main>
+  <main id="pairing-main" hidden>
+    <section class="session">
+      <p class="eyebrow">Booth access</p>
+      <h1 id="pairing-title">Connecting</h1>
+      <p id="pairing-description" class="detail"></p>
+      <form id="claim-form" hidden>
+        <div class="field">
+          <label for="setup-pin">One-time setup PIN</label>
+          <input id="setup-pin" name="pin" type="password" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{10}" minlength="10" maxlength="10" required>
+        </div>
+        <button type="submit">Claim administrator access</button>
+      </form>
+      <div id="admin-invitation" hidden>
+        <button id="create-invitation" type="button">Create guest invitation</button>
+        <div id="invitation-result" class="preview" hidden>
+          <img id="invitation-qr" alt="Guest invitation QR code">
+        </div>
+        <p id="invitation-link" class="detail" hidden>Guests scan this QR after joining a network that can reach the booth.</p>
+        <label for="invitation-url">Or copy the guest invitation link</label>
+        <input id="invitation-url" type="url" readonly hidden>
+        <button id="copy-invitation" class="secondary" type="button" hidden>Copy invitation link</button>
+        <p id="invitation-expiry" class="detail"></p>
+        <h2>Paired guest phones</h2>
+        <ul id="guest-list" class="guest-list"></ul>
+        <button id="open-capture" class="secondary" type="button">Open booth controls</button>
+      </div>
+      <p id="pair-error" class="error" role="alert" hidden></p>
+    </section>
+  </main>
+
+  <main id="capture-main" hidden>
     <section class="session" aria-live="polite">
       <p class="eyebrow">Current session</p>
       <h1 id="state-title">Ready</h1>
       <p id="state-detail" class="detail">Set up a session when you are ready.</p>
       <p id="countdown" class="countdown" aria-live="assertive"></p>
-      <div id="preview" class="preview"><p>Your captured photos will appear here.</p></div>
+      <div id="preview" class="preview">
+        <img id="live-preview" alt="Live camera preview" hidden>
+        <p>Your captured photos will appear here.</p>
+      </div>
       <div id="downloads" class="downloads"></div>
       <p id="error" class="error" role="alert" hidden></p>
       <button id="continue-button" class="secondary" type="button" hidden>Continue</button>
+      <button id="take-control-button" class="secondary" type="button" hidden>Take control</button>
     </section>
 
     <section class="controls">
@@ -173,6 +210,7 @@
           <label for="countdown-seconds">Countdown, in seconds</label>
           <input id="countdown-seconds" name="countdown_seconds" type="number" min="0" max="10" value="3" required>
         </div>
+        <button id="manage-invitations" class="secondary" type="button" hidden>Manage guest access</button>
         <button id="start-button" type="submit">Start session</button>
       </form>
     </section>
@@ -182,26 +220,121 @@
     const form = document.querySelector("#session-form");
     const startButton = document.querySelector("#start-button");
     const continueButton = document.querySelector("#continue-button");
+    const takeControlButton = document.querySelector("#take-control-button");
     const stateTitle = document.querySelector("#state-title");
     const stateDetail = document.querySelector("#state-detail");
     const countdown = document.querySelector("#countdown");
     const preview = document.querySelector("#preview");
+    const livePreview = document.querySelector("#live-preview");
     const downloads = document.querySelector("#downloads");
     const errorMessage = document.querySelector("#error");
     const settings = form.querySelectorAll("input");
+    const pairingMain = document.querySelector("#pairing-main");
+    const captureMain = document.querySelector("#capture-main");
+    const pairingTitle = document.querySelector("#pairing-title");
+    const pairingDescription = document.querySelector("#pairing-description");
+    const claimForm = document.querySelector("#claim-form");
+    const adminInvitation = document.querySelector("#admin-invitation");
+    const pairError = document.querySelector("#pair-error");
+    const invitationResult = document.querySelector("#invitation-result");
+    const invitationQr = document.querySelector("#invitation-qr");
+    const invitationLink = document.querySelector("#invitation-link");
+    const invitationUrl = document.querySelector("#invitation-url");
+    const copyInvitation = document.querySelector("#copy-invitation");
+    const invitationExpiry = document.querySelector("#invitation-expiry");
+    const guestList = document.querySelector("#guest-list");
+    const manageInvitations = document.querySelector("#manage-invitations");
     let currentSession = null;
     let busy = false;
+    let currentRole = null;
 
     async function request(url, options) {
       const response = await fetch(url, options);
+      if (response.status === 204) return null;
       const body = await response.json();
-      if (!response.ok) throw new Error(body.detail || "The request could not be completed.");
+      if (!response.ok) {
+        const error = new Error(body.detail || "The request could not be completed.");
+        error.status = response.status;
+        throw error;
+      }
       return body;
+    }
+
+    function showPairing(mode) {
+      pairingMain.hidden = false;
+      captureMain.hidden = true;
+      claimForm.hidden = mode !== "claim";
+      adminInvitation.hidden = mode !== "admin";
+      pairError.hidden = true;
+      invitationResult.hidden = true;
+      invitationLink.hidden = true;
+      invitationUrl.hidden = true;
+      copyInvitation.hidden = true;
+      invitationExpiry.textContent = "";
+      if (mode === "unconfigured") {
+        pairingTitle.textContent = "Booth needs setup";
+        pairingDescription.textContent = "This device has no provisioned setup PIN yet. Prepare a per-device image before claiming administrator access.";
+      } else if (mode === "claim") {
+        pairingTitle.textContent = "Claim this booth";
+        pairingDescription.textContent = "Enter the one-time setup PIN created when this Pi was provisioned. This phone will become the administrator.";
+      } else if (mode === "admin") {
+        pairingTitle.textContent = "Administrator access";
+        pairingDescription.textContent = "Create a short-lived guest invitation. Guests must join a network that can reach this booth first.";
+      } else {
+        pairingTitle.textContent = "Join this booth";
+        pairingDescription.textContent = "Ask the administrator to show a guest invitation QR, then scan it with this phone.";
+      }
+    }
+
+    function showCapture() {
+      pairingMain.hidden = true;
+      captureMain.hidden = false;
+      manageInvitations.hidden = currentRole !== "admin";
+    }
+
+    async function loadGuestCredentials() {
+      const guests = await request("/api/pairing/guests");
+      guestList.replaceChildren();
+      if (!guests.length) {
+        const empty = document.createElement("li");
+        empty.textContent = "No guest phones paired.";
+        guestList.append(empty);
+        return;
+      }
+
+      guests.forEach((guest) => {
+        const row = document.createElement("li");
+        const status = document.createElement("span");
+        const expired = guest.expires_at <= Math.floor(Date.now() / 1000);
+        status.textContent = guest.revoked ? "Access revoked" : expired ? "Access expired" : "Guest access active";
+        row.append(status);
+        if (!guest.revoked && !expired) {
+          const revokeButton = document.createElement("button");
+          revokeButton.type = "button";
+          revokeButton.textContent = "Revoke";
+          revokeButton.setAttribute("aria-label", "Revoke guest phone access");
+          revokeButton.addEventListener("click", async () => {
+            revokeButton.disabled = true;
+            try {
+              await request(`/api/pairing/credentials/${guest.credential_id}`, { method: "DELETE" });
+              await loadGuestCredentials();
+            } catch (error) {
+              pairError.textContent = error.message;
+              pairError.hidden = false;
+              revokeButton.disabled = false;
+            }
+          });
+          row.append(revokeButton);
+        }
+        guestList.append(row);
+      });
     }
 
     function render(session) {
       currentSession = session;
       const state = session?.state;
+      const activeSession = Boolean(session && state !== "done");
+      const isController = Boolean(session?.is_controller);
       const titles = {
         armed: "Starting",
         countdown: "Get ready",
@@ -211,7 +344,9 @@
         done: "Session complete"
       };
       stateTitle.textContent = state ? titles[state] : "Ready";
-      stateDetail.textContent = state === "review"
+      stateDetail.textContent = activeSession && !isController
+        ? "Another phone is controlling this session. You can take control after the 60-second inactivity window."
+        : state === "review"
         ? `Photo ${session.shots_taken} of ${session.shots_total} captured.`
         : state === "done"
           ? `${session.shots_taken} photos saved to this session.`
@@ -219,12 +354,15 @@
             ? "Keep your pose; the session is in progress."
             : "Set up a session when you are ready.";
       startButton.hidden = Boolean(state && state !== "done");
-      continueButton.hidden = state !== "review" && state !== "capturing";
-      continueButton.textContent = state === "capturing" ? "Retry capture" : "Continue";
+      continueButton.hidden = !activeSession || !isController;
+      continueButton.textContent = state === "capturing" ? "Take photo" : "Continue";
+      takeControlButton.hidden = !activeSession || isController;
+      takeControlButton.disabled = busy || !session?.can_control;
       for (const input of settings) input.disabled = Boolean(state && state !== "done");
       downloads.replaceChildren();
 
       if (session?.photo_ids?.length) {
+        livePreview.hidden = true;
         const latestPhoto = session.photo_ids[session.photo_ids.length - 1];
         const image = document.createElement("img");
         image.src = `/api/sessions/${session.id}/photos/${latestPhoto}?download=false`;
@@ -243,12 +381,25 @@
           link.textContent = `Download photo ${index + 1}`;
           downloads.append(link);
         });
+      } else if (session) {
+        livePreview.removeAttribute("src");
+        livePreview.hidden = true;
+        const status = document.createElement("p");
+        status.textContent = "Live preview pauses while photos are being captured.";
+        preview.replaceChildren(status);
       } else {
-        preview.innerHTML = "<p>Your captured photos will appear here.</p>";
+        if (!livePreview.src) livePreview.src = "/api/preview";
+        livePreview.onerror = () => {
+          const fallback = document.createElement("p");
+          fallback.textContent = "Live preview is unavailable. The booth can still capture photos.";
+          preview.replaceChildren(fallback);
+        };
+        livePreview.hidden = false;
+        preview.replaceChildren(livePreview);
       }
 
-      startButton.disabled = busy;
-      continueButton.disabled = busy;
+      startButton.disabled = busy || (activeSession && !isController);
+      continueButton.disabled = busy || !isController;
       errorMessage.hidden = true;
     }
 
@@ -312,7 +463,7 @@
 
     continueButton.addEventListener("click", async () => {
       if (busy || !currentSession) return;
-      if (currentSession.state === "capturing") {
+      if (currentSession.state !== "review") {
         await runFlow(currentSession);
         return;
       }
@@ -328,24 +479,170 @@
       }
     });
 
-    async function initialize() {
+    takeControlButton.addEventListener("click", async () => {
+      if (!currentSession || busy) return;
+      takeControlButton.disabled = true;
       try {
-        const health = await request("/api/health");
-        document.querySelector("#camera-label").textContent = health.camera;
-        document.querySelector("#connection-dot").classList.add("online");
-        const session = await request("/api/session");
-        if (session && ["armed", "countdown", "capturing", "composing"].includes(session.state)) {
-          await runFlow(session);
-        } else {
-          render(session);
-        }
+        const session = await request(`/api/sessions/${currentSession.id}/control`, {
+          method: "POST"
+        });
+        render(session);
       } catch (error) {
-        document.querySelector("#camera-label").textContent = "Offline";
+        errorMessage.textContent = error.message;
+        errorMessage.hidden = false;
+        takeControlButton.disabled = false;
+      }
+    });
+
+    claimForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = claimForm.querySelector("button");
+      button.disabled = true;
+      pairError.hidden = true;
+      try {
+        await request("/api/pairing/claim", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pin: claimForm.elements.pin.value })
+        });
+        currentRole = "admin";
+        showPairing("admin");
+        await loadGuestCredentials();
+      } catch (error) {
+        pairError.textContent = error.message;
+        pairError.hidden = false;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    document.querySelector("#create-invitation").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      pairError.hidden = true;
+      try {
+        const result = await request("/api/pairing/invitations", { method: "POST" });
+        invitationQr.src = result.qr_data_url;
+        invitationResult.hidden = false;
+        invitationLink.hidden = false;
+        invitationUrl.value = result.url;
+        invitationUrl.hidden = false;
+        copyInvitation.hidden = false;
+        invitationExpiry.textContent = `Invitation expires in ${Math.round(result.expires_in_seconds / 60)} minutes.`;
+      } catch (error) {
+        pairError.textContent = error.message;
+        pairError.hidden = false;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    document.querySelector("#open-capture").addEventListener("click", async () => {
+      showCapture();
+      await loadCurrentSession();
+    });
+
+    manageInvitations.addEventListener("click", async () => {
+      showPairing("admin");
+      try {
+        await loadGuestCredentials();
+      } catch (error) {
+        pairError.textContent = error.message;
+        pairError.hidden = false;
+      }
+    });
+
+    copyInvitation.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(invitationUrl.value);
+        copyInvitation.textContent = "Copied";
+      } catch (error) {
+        pairError.textContent = "Clipboard access is unavailable; select and copy the link above.";
+        pairError.hidden = false;
+      }
+    });
+
+    async function loadCurrentSession() {
+      try {
+        const session = await request("/api/session");
+        render(session);
+      } catch (error) {
         errorMessage.textContent = error.message;
         errorMessage.hidden = false;
       }
     }
 
+    async function pollCurrentSession() {
+      if (busy || captureMain.hidden) return;
+      try {
+        const session = await request("/api/session");
+        if (
+          session?.id !== currentSession?.id
+          || session?.state !== currentSession?.state
+          || session?.can_control !== currentSession?.can_control
+          || session?.is_controller !== currentSession?.is_controller
+        ) {
+          render(session);
+        }
+      } catch (error) {
+        errorMessage.textContent = error.message;
+        errorMessage.hidden = false;
+      }
+    }
+
+    async function pairFromInviteFragment() {
+      const fragment = decodeURIComponent(window.location.hash);
+      const match = fragment.match(/^#\/invite\/([A-Za-z0-9_-]+)$/);
+      if (!match) return false;
+      await request("/api/pairing/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invitation: match[1] })
+      });
+      window.history.replaceState(null, "", window.location.pathname);
+      return true;
+    }
+
+    async function initialize() {
+      try {
+        const health = await request("/api/health");
+        document.querySelector("#camera-label").textContent = health.camera;
+        document.querySelector("#connection-dot").classList.add("online");
+
+        const status = await request("/api/pairing/status");
+        if (!status.configured) {
+          showPairing("unconfigured");
+          return;
+        }
+        if (!status.claimed) {
+          showPairing("claim");
+          return;
+        }
+
+        try {
+          await pairFromInviteFragment();
+          const identity = await request("/api/pairing/me");
+          currentRole = identity.role;
+          if (currentRole === "admin") {
+            showPairing("admin");
+            await loadGuestCredentials();
+            return;
+          }
+          showCapture();
+          await loadCurrentSession();
+        } catch (error) {
+          if (error.status !== 401) throw error;
+          showPairing("join");
+        }
+      } catch (error) {
+        document.querySelector("#camera-label").textContent = "Offline";
+        showPairing("unconfigured");
+        pairError.textContent = error.message;
+        pairError.hidden = false;
+      }
+    }
+
+    window.setInterval(pollCurrentSession, 2000);
     initialize();
   </script>
 </body>

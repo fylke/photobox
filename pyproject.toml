@@ -9,6 +9,7 @@ description = "A camera-agnostic photo booth daemon"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115,<1",
+    "qrcode[pil]>=8,<9",
     "uvicorn[standard]>=0.30,<1",
 ]
 
@@ -21,6 +22,7 @@ dev = [
 
 [project.scripts]
 photobox = "photobox.main:run"
+photobox-setup-pin = "photobox.provision:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

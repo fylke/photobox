@@ -1,13 +1,13 @@
 # First Boot and Pairing
 
-> **Planned workflow:** This guide describes the intended Milestone 2 setup. The current release does not yet create per-device images, configure a Pi hotspot, or provide phone pairing. Do not treat the steps below as available commands until those features are implemented and this notice is removed.
+> **Status:** Phone pairing and the local one-time PIN command are implemented for an already-installed host. Per-device image creation, Wi-Fi credential provisioning, Pi hotspot setup, and venue Wi-Fi configuration are still planned. The complete SD-card/hotspot workflow below is not available yet.
 
 This guide is for someone setting up a Photobox without needing to know Linux networking or security terminology. It explains what the computer creates, what to put on the Pi, and what the different codes are for.
 
 ## The short version
 
-1. Download the common Photobox system image.
-2. Use the local provisioning tool on your computer to make a copy for one specific Pi. It creates that Pi’s Wi-Fi details and one-time setup PIN.
+1. Download the common Photobox system image. (Image publishing is not yet implemented.)
+2. Use the planned local image-provisioning tool on your computer to make a copy for one specific Pi. It will create that Pi’s Wi-Fi details and one-time setup PIN.
 3. Write the per-Pi image to a microSD card and put it in that Pi.
 4. Join the visible Wi-Fi network created by the Pi using the Wi-Fi QR code or the printed details.
 5. Open the local Photobox page and enter the setup PIN to claim the booth as its first administrator.
@@ -16,7 +16,21 @@ This guide is for someone setting up a Photobox without needing to know Linux ne
 
 These are two different operations: **joining Wi-Fi connects a device to the Pi’s network; accepting an invitation gives that device guest access to Photobox.**
 
+## Available now: local pairing on an installed host
+
+This is the supported development flow until per-device images and hotspot setup exist:
+
+1. Install Photobox on a host and choose a data directory. Keep the same `PHOTOBOX_DATA_DIR` for the setup command and daemon if you override its default.
+2. Run `photobox-setup-pin` in a trusted terminal. It prints a random 10-digit PIN once and stores only a slow hash in `pairing.sqlite3`. Record the PIN privately; the command refuses to replace it after setup is initialized.
+3. Start `photobox` and open its address from a phone or laptop already on a network that can reach the host.
+4. Enter the PIN to claim admin access. From the admin page, create a guest invitation QR or copy its short-lived link. Guests must already be on a reachable network before they scan/open the invitation.
+5. Guests can view the active session; one phone controls it. The admin can revoke guest access from the paired-phone list.
+
+The command does not create an SD-card image, configure a Wi-Fi password, start an access point, or connect the Pi to venue Wi-Fi. Do not assume a headless Pi can be reached over Wi-Fi until those networking pieces are implemented.
+
 ## Three codes, three purposes
+
+Current behavior: `photobox-setup-pin` initializes an already-installed host. The image-time provisioner described later is still planned.
 
 - **Wi-Fi join code:** contains the visible network name and Wi-Fi password. It lets a phone or laptop connect to the Pi’s network. It does not sign the person in to Photobox.
 - **Setup PIN:** a unique, one-time 10-digit number for the first administrator claim. It is not the Wi-Fi password and is not shared with guests. The local provisioning tool shows it when preparing that Pi’s image. The Pi stores only a hash and invalidates the PIN after a successful claim.
