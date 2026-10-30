@@ -1,6 +1,6 @@
 # Photobox Implementation Plan: Milestones 2–4
 
-**Status (2026-10-30):** Milestone 1 is implemented in commit `10286a8`; physical webcam verification remains outstanding. Milestone 2 is in progress: setup PIN bootstrap, pairing/invitation API and UI, controller leases, mock/V4L2 MJPEG preview, per-device credential bundles, a minimal Raspberry Pi OS Lite image-build workflow, Linux-based image provisioning with a NetworkManager setup hotspot, and admin-controlled WPA-Personal venue Wi-Fi setup are implemented. The image workflow and network integration have not yet been validated on physical Pi hardware. Milestones 3–4 have not started.
+**Status (2026-10-31):** Milestone 1 is implemented in commit `10286a8`; physical webcam verification remains outstanding. Milestone 2 is implemented in code: setup PIN bootstrap, pairing/invitation API and UI, controller leases, mock/V4L2 MJPEG preview, per-device credential bundles, a minimal Raspberry Pi OS Lite image-build workflow, Linux-based image provisioning with a NetworkManager setup hotspot, and admin-controlled WPA-Personal venue Wi-Fi setup. The image workflow and network integration still need CI and physical Pi validation. Milestone 3 is in progress: camera capabilities, availability, role assignment, client bindings, status reporting, and generic gphoto2 still capture have initial implementations; DSLR model validation and the remaining disconnect/preview fallbacks remain. Milestone 4 has not started.
 
 This plan is the contributor-facing sequence through the media milestone. The user-facing, beginner-oriented setup workflow is in [First Boot and Pairing](../../docs/first-boot-and-pairing.md). Keep the two documents in sync as implementation decisions become code.
 
@@ -43,9 +43,9 @@ Do not claim physical camera support from mock/subprocess tests alone.
 
 ## Milestone 3: Capture quality
 
-1. Add a camera registry with stable IDs, capabilities, availability, `preview`/`capture` roles, and minimal screen/client-to-camera bindings; persist only the required configuration.
-2. Extend camera lifecycle/capability interfaces, then add a `gphoto2` driver for the supported Canon/Sony profiles. Preserve the mock and V4L2 implementations.
-3. Implement the design’s §5.4 fallbacks: webcam capture when DSLR is unavailable; webcam/no-preview fallback when DSLR live view is unavailable; capture continues after preview loss; retry DSLR capture once, then use the latest preview frame and mark it low quality; setup/status remains available with no camera.
+1. Add a camera registry with stable IDs, capabilities, availability, `preview`/`capture` roles, and minimal screen/client-to-camera bindings; persist only the required configuration. **Initial in-memory registry, client-bound preview selection, session capture selection, and status API implemented; persistent binding configuration remains.**
+2. Extend camera lifecycle/capability interfaces, then add a generic `gphoto2` driver for DSLR still capture. Use the webcam for preview rather than claiming unverified DSLR live view. Preserve the mock and V4L2 implementations; certify exact Canon/Sony models only after hardware tests. **Generic CLI adapter implemented, pending physical validation.**
+3. Implement the design’s §5.4 fallbacks: webcam capture when DSLR is unavailable; webcam/no-preview fallback when DSLR live view is unavailable; capture continues after preview loss; retry DSLR capture once, then use the latest preview frame and mark it low quality; setup/status remains available with no camera. **Available-camera selection, one retry, recent-preview fallback, low-quality session metadata, and no-camera status are implemented; hot-plug/mid-session recovery remains.**
 4. Keep bindings limited to camera selection. Do not implement primary/auxiliary screens, showcase behavior, or multi-camera screen layouts in this milestone.
 
 **Milestone 3 acceptance:** unit/API tests cover role and binding selection, gphoto2 failures/disconnects, and each fallback including low-quality metadata. Manually verify the supported webcam and Canon/Sony profiles on hardware before advertising those profiles as validated.

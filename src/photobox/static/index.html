@@ -265,6 +265,7 @@
     let currentSession = null;
     let busy = false;
     let currentRole = null;
+    let cameraAvailable = true;
 
     async function request(url, options) {
       const response = await fetch(url, options);
@@ -426,7 +427,7 @@
         preview.replaceChildren(livePreview);
       }
 
-      startButton.disabled = busy || (activeSession && !isController);
+      startButton.disabled = !cameraAvailable || busy || (activeSession && !isController);
       continueButton.disabled = busy || !isController;
       errorMessage.hidden = true;
     }
@@ -661,8 +662,15 @@
 
     async function initialize() {
       try {
-        const health = await request("/api/health");
-        document.querySelector("#camera-label").textContent = health.camera;
+        const cameras = await request("/api/cameras");
+        const availableCamera = cameras.find((camera) => camera.available);
+        cameraAvailable = cameras.some(
+          (camera) => camera.available && camera.roles.includes("capture")
+            && camera.capabilities.still_capture
+        );
+        document.querySelector("#camera-label").textContent = availableCamera
+          ? availableCamera.camera_id
+          : "No camera connected";
         document.querySelector("#connection-dot").classList.add("online");
         await loadNetworkStatus();
 

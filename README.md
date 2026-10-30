@@ -42,6 +42,10 @@ photobox
 
 Open `http://localhost:8000` from a browser that can reach the host and enter the setup PIN. By default, the daemon captures from `/dev/video0` using the system `ffmpeg` executable. Install `ffmpeg` on the host and connect a V4L2-compatible webcam before starting the service.
 
+For generic DSLR still capture through libgphoto2, set the camera to capture JPEG and set `PHOTOBOX_CAMERA=gphoto2`. The app uses the configured V4L2 webcam for preview and as a capture fallback when available. This initial adapter does not claim DSLR live preview. Exact camera-model compatibility has not been physically validated.
+
+The public `/api/cameras` status endpoint reports registered camera IDs, assigned preview/capture roles, capabilities, and current availability. If no capture camera is available, the booth remains up for setup but refuses to start a photo session.
+
 For development without a camera, run with the mock driver:
 
 ```sh
@@ -52,8 +56,9 @@ The pairing PIN must still be initialized with `photobox-setup-pin` first. The P
 
 ## Configuration
 
-- `PHOTOBOX_CAMERA`: `webcam` (default) or `mock`.
+- `PHOTOBOX_CAMERA`: `webcam` (default), `gphoto2`, or `mock`.
 - `PHOTOBOX_CAMERA_DEVICE`: V4L2 device path; defaults to `/dev/video0`.
+- `PHOTOBOX_GPHOTO2_PORT`: optional gphoto2 port selector when multiple cameras are attached.
 - `PHOTOBOX_DATA_DIR`: photo and session storage directory; defaults to `~/photobox`.
 - `PHOTOBOX_HOST`: bind address; defaults to `0.0.0.0`.
 - `PHOTOBOX_PORT`: HTTP port; defaults to `8000`.

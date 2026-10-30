@@ -1,1 +1,1 @@
-avahi-daemon dnsmasq-base ffmpeg iw network-manager polkitd python3-venv wpasupplicant
+avahi-daemon dnsmasq-base ffmpeg gphoto2 iw network-manager polkitd python3-venv wpasupplicant

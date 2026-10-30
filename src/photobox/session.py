@@ -1,9 +1,10 @@
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import uuid4
 
-from photobox.camera import Camera
+from photobox.camera import Camera, CapturedImage
 from photobox.storage import LocalStorage
 
 
@@ -31,8 +32,10 @@ class CaptureSession:
     shots_total: int
     countdown_seconds: int
     started_at: str
+    camera_id: str
     shots_taken: int = 0
     photo_ids: list[str] = field(default_factory=list)
+    low_quality_photo_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
         session = asdict(self)
@@ -43,10 +46,17 @@ class CaptureSession:
 class SessionManager:
     def __init__(self, camera: Camera, storage: LocalStorage):
         self.camera = camera
+        self._active_camera = camera
         self.storage = storage
         self.current: CaptureSession | None = None
 
-    def start(self, shots: int, countdown_seconds: int) -> CaptureSession:
+    def start(
+        self,
+        shots: int,
+        countdown_seconds: int,
+        camera: Camera | None = None,
+        preview_frame_provider: Callable[[], bytes | None] | None = None,
+    ) -> CaptureSession:
         if self.current and self.current.state is not SessionState.DONE:
             raise SessionConflict("A session is already in progress")
         if not 1 <= shots <= 8:
@@ -54,12 +64,15 @@ class SessionManager:
         if not 0 <= countdown_seconds <= 10:
             raise ValueError("countdown_seconds must be between 0 and 10")
 
+        self._active_camera = camera or self.camera
+        self._preview_frame_provider = preview_frame_provider
         self.current = CaptureSession(
             id=str(uuid4()),
             state=SessionState.ARMED,
             shots_total=shots,
             countdown_seconds=countdown_seconds,
             started_at=datetime.now(UTC).isoformat(),
+            camera_id=self._active_camera.camera_id,
         )
         return self.current
 
@@ -73,8 +86,11 @@ class SessionManager:
         elif session.state is SessionState.COUNTDOWN:
             session.state = SessionState.CAPTURING
         elif session.state is SessionState.CAPTURING:
-            photo_id = self.storage.save_photo(session.id, self.camera.capture_still())
+            captured = self._capture_with_fallback()
+            photo_id = self.storage.save_photo(session.id, captured)
             session.photo_ids.append(photo_id)
+            if captured.low_quality:
+                session.low_quality_photo_ids.append(photo_id)
             session.shots_taken += 1
             session.state = SessionState.REVIEW
         elif session.state is SessionState.REVIEW:
@@ -90,3 +106,27 @@ class SessionManager:
             raise InvalidTransition("A completed session cannot be advanced")
 
         return session
+
+    def _capture_with_fallback(self) -> CapturedImage:
+        try:
+            return self._active_camera.capture_still()
+        except RuntimeError:
+            try:
+                return self._active_camera.capture_still()
+            except RuntimeError as retry_error:
+                frame = (
+                    self._preview_frame_provider()
+                    if self._preview_frame_provider is not None
+                    else None
+                )
+                if (
+                    frame is not None
+                    and len(frame) <= 5_000_000
+                    and frame.startswith(b"\xff\xd8")
+                    and frame.endswith(b"\xff\xd9")
+                ):
+                    return CapturedImage(frame, "jpg", "image/jpeg", low_quality=True)
+                raise RuntimeError(
+                    f"Camera capture failed after one retry and no recent preview frame "
+                    f"is available: {retry_error}"
+                ) from retry_error

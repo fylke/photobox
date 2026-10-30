@@ -12,7 +12,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from photobox.camera import Camera, MockCamera, camera_from_environment
+from photobox.camera import Camera, MockCamera, UnavailableCamera
+from photobox.camera_registry import CameraRegistry, camera_registry_from_environment
 from photobox.network import (
     DisabledNetworkManager,
     NetworkError,
@@ -58,16 +59,23 @@ def create_app(
     setup_pin_hash: str | None = None,
     device_config_path: Path | None = None,
     network_manager: NetworkManager | None = None,
+    camera_registry: CameraRegistry | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Photobox", version="0.1.0")
     if setup_pin_hash is not None and device_config_path is not None:
         raise ValueError("Choose either setup_pin_hash or device_config_path, not both")
+    if camera is not None and camera_registry is not None:
+        raise ValueError("Choose either camera or camera_registry, not both")
+    registry = camera_registry or CameraRegistry([camera if camera is not None else MockCamera()])
+    capture_camera = (
+        registry.camera_for_role("capture", available_only=False) or UnavailableCamera()
+    )
     device_config = load_device_config(device_config_path) if device_config_path else None
     if device_config is not None:
         setup_pin_hash = str(device_config["setup_pin_hash"])
     data_dir = storage_dir or Path(os.environ.get("PHOTOBOX_DATA_DIR", "~/photobox"))
     storage = LocalStorage(data_dir)
-    manager = SessionManager(camera if camera is not None else MockCamera(), storage)
+    manager = SessionManager(capture_camera, storage)
     pairing = PairingManager(storage.root / "pairing.sqlite3", setup_pin_hash)
     if network_manager is not None:
         network = network_manager
@@ -82,6 +90,7 @@ def create_app(
     app.state.session_manager = manager
     app.state.pairing_manager = pairing
     app.state.device_config = device_config
+    app.state.camera_registry = registry
     screen_html = files("photobox").joinpath("static", "index.html").read_text(encoding="utf-8")
     controller_lock = Lock()
     controller_credential_id: str | None = None
@@ -250,14 +259,23 @@ def create_app(
     def health() -> dict[str, str]:
         return {"status": "ok", "camera": manager.camera.camera_id}
 
+    @app.get("/api/cameras")
+    def camera_status() -> list[dict[str, object]]:
+        return [descriptor.as_dict() for descriptor in registry.descriptors()]
+
     @app.get("/api/preview")
     def preview(request: Request) -> StreamingResponse:
-        require_principal(request)
-        frames = manager.camera.iter_preview_frames()
+        principal = require_principal(request)
+        preview_camera = registry.camera_for_role("preview", principal.credential_id)
+        if preview_camera is None or not preview_camera.capabilities().preview:
+            raise HTTPException(status_code=503, detail="No camera preview is currently available.")
+        frames = preview_camera.iter_preview_frames()
 
         def stream_frames():
             try:
                 for frame in frames:
+                    if len(frame) <= 5_000_000:
+                        registry.record_preview_frame(preview_camera.camera_id, frame)
                     yield (
                         b"--frame\r\n"
                         b"Content-Type: image/jpeg\r\n"
@@ -287,9 +305,19 @@ def create_app(
     def start_session(payload: StartSessionRequest, request: Request) -> dict[str, object]:
         validate_origin(request)
         principal = require_principal(request)
+        capture_camera = registry.camera_for_role("capture", principal.credential_id)
+        if capture_camera is None or not capture_camera.capabilities().still_capture:
+            raise HTTPException(status_code=503, detail="No still camera is currently available.")
         with controller_lock:
             try:
-                session = manager.start(payload.shots, payload.countdown_seconds)
+                session = manager.start(
+                    payload.shots,
+                    payload.countdown_seconds,
+                    capture_camera,
+                    preview_frame_provider=lambda: registry.latest_preview_frame(
+                        principal.credential_id
+                    ),
+                )
             except SessionConflict as error:
                 raise HTTPException(status_code=409, detail=str(error)) from error
             except ValueError as error:
@@ -346,7 +374,7 @@ def create_app(
 
 
 app = create_app(
-    camera=camera_from_environment(),
+    camera_registry=camera_registry_from_environment(),
     setup_pin_hash=os.environ.get("PHOTOBOX_SETUP_PIN_HASH"),
     device_config_path=(
         Path(os.environ["PHOTOBOX_DEVICE_CONFIG"])

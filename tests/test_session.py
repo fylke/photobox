@@ -13,6 +13,21 @@ from photobox.session import (
 from photobox.storage import LocalStorage
 
 
+class AlternateCamera(MockCamera):
+    @property
+    def camera_id(self) -> str:
+        return "mock-selected"
+
+
+class FailingCamera(AlternateCamera):
+    def __init__(self) -> None:
+        self.capture_attempts = 0
+
+    def capture_still(self):
+        self.capture_attempts += 1
+        raise RuntimeError("DSLR unavailable")
+
+
 class SessionManagerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -47,6 +62,51 @@ class SessionManagerTests(unittest.TestCase):
             self.manager.advance(session.id)
         with self.assertRaises(InvalidTransition):
             self.manager.advance(session.id)
+
+    def test_session_can_capture_from_registry_selected_camera(self) -> None:
+        selected_camera = AlternateCamera()
+        session = self.manager.start(shots=1, countdown_seconds=0, camera=selected_camera)
+
+        self.assertEqual(session.camera_id, "mock-selected")
+        for _ in range(5):
+            session = self.manager.advance(session.id)
+        self.assertEqual(session.camera_id, "mock-selected")
+
+    def test_failed_camera_retries_once_then_saves_recent_preview_as_low_quality(self) -> None:
+        failing_camera = FailingCamera()
+        preview_frame = b"\xff\xd8preview-jpeg\xff\xd9"
+        session = self.manager.start(
+            shots=1,
+            countdown_seconds=0,
+            camera=failing_camera,
+            preview_frame_provider=lambda: preview_frame,
+        )
+
+        for _ in range(5):
+            session = self.manager.advance(session.id)
+
+        self.assertEqual(failing_camera.capture_attempts, 2)
+        self.assertEqual(session.low_quality_photo_ids, session.photo_ids)
+        saved_photo = (
+            self.storage_dir / "events" / "default" / session.id / (f"{session.photo_ids[0]}.jpg")
+        )
+        self.assertEqual(saved_photo.read_bytes(), preview_frame)
+        metadata = json.loads(
+            (self.storage_dir / "events" / "default" / session.id / "session.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(metadata["low_quality_photo_ids"], session.photo_ids)
+
+    def test_failed_camera_without_recent_preview_raises_after_one_retry(self) -> None:
+        failing_camera = FailingCamera()
+        session = self.manager.start(shots=1, countdown_seconds=0, camera=failing_camera)
+        self.manager.advance(session.id)
+        self.manager.advance(session.id)
+
+        with self.assertRaisesRegex(RuntimeError, "after one retry"):
+            self.manager.advance(session.id)
+        self.assertEqual(failing_camera.capture_attempts, 2)
 
 
 if __name__ == "__main__":

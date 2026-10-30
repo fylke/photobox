@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from photobox.api import create_app
-from photobox.camera import MockCamera
+from photobox.camera import MockCamera, UnavailableCamera
+from photobox.camera_registry import CameraRegistry
 from photobox.network import NetworkError, NetworkStatus
 from photobox.pairing import hash_setup_pin
 
@@ -124,6 +125,7 @@ def test_screen_ui_is_served_from_root(tmp_path):
     assert "Take control" in response.text
     assert "setInterval" in response.text
     assert "Live camera preview" in response.text
+    assert "No camera connected" in response.text
     assert "decodeURIComponent(window.location.hash)" in response.text
 
 
@@ -171,6 +173,49 @@ def test_network_status_is_public_and_does_not_expose_credentials(tmp_path):
         "message": "Connected to the Photobox setup network.",
         "address": "10.42.0.1",
     }
+
+
+def test_camera_status_reports_capabilities_roles_and_availability(tmp_path):
+    client = TestClient(
+        create_app(storage_dir=tmp_path, camera_registry=CameraRegistry([MockCamera()]))
+    )
+
+    response = client.get("/api/cameras")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "camera_id": "mock-0",
+            "available": True,
+            "roles": ["preview", "capture"],
+            "capabilities": {
+                "preview": True,
+                "still_capture": True,
+                "max_resolution": [640, 480],
+                "controls": [],
+                "live_view": True,
+            },
+        }
+    ]
+
+
+def test_no_camera_keeps_status_available_and_rejects_capture_and_preview(tmp_path):
+    registry = CameraRegistry([UnavailableCamera()])
+    client = TestClient(
+        create_app(
+            storage_dir=tmp_path,
+            setup_pin_hash=hash_setup_pin(SETUP_PIN),
+            camera_registry=registry,
+        )
+    )
+
+    assert client.get("/api/health").json() == {"status": "ok", "camera": "none"}
+    assert client.get("/api/cameras").json()[0]["available"] is False
+    claim = client.post("/api/pairing/claim", json={"pin": SETUP_PIN})
+    assert claim.status_code == 200
+    assert client.post("/api/sessions", json={"shots": 1}).status_code == 503
+    assert client.get("/api/preview").status_code == 503
+    assert client.get("/api/pairing/status").json()["claimed"] is True
 
 
 def test_only_admin_can_configure_venue_wifi(tmp_path):
@@ -405,9 +450,14 @@ def test_preview_stream_returns_multipart_jpeg_frames(tmp_path):
     client = paired_client(tmp_path, camera=FinitePreviewCamera())
 
     response = client.get("/api/preview")
+    credential_id = client.get("/api/pairing/me").json()["credential_id"]
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("multipart/x-mixed-replace; boundary=frame")
     assert response.content.count(b"--frame\r\n") == 2
     assert b"first-frame" in response.content
     assert b"second-frame" in response.content
+    assert (
+        client.app.state.camera_registry.latest_preview_frame(credential_id)
+        == b"\xff\xd8second-frame\xff\xd9"
+    )
