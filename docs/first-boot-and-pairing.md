@@ -1,6 +1,6 @@
 # First Boot and Pairing
 
-> **Status:** Phone pairing, the local one-time PIN command, a minimal Raspberry Pi OS Lite image build workflow, and Linux-based per-device image provisioning are implemented. The image workflow has not yet been validated on physical Pi hardware. Pi hotspot setup and venue Wi-Fi configuration remain planned, so the complete headless SD-card workflow below is not available yet.
+> **Status:** Phone pairing, the local one-time PIN command, a minimal Raspberry Pi OS Lite image build workflow, Linux-based per-device image provisioning, setup hotspot configuration, and admin-controlled venue Wi-Fi setup are implemented. The image and network paths have not yet been validated on physical Pi hardware.
 
 Maintainers: the physical acceptance procedure is in [Milestone 2 Hardware Validation](hardware-validation-m2.md). Do not mark the setup flow complete until that checklist passes on the supported Pi/OS.
 
@@ -20,7 +20,7 @@ These are two different operations: **joining Wi-Fi connects a device to the Pi�
 
 ## Available now: local pairing on an installed host
 
-This is the supported development flow until per-device images and hotspot setup exist:
+This is the development flow for an already-installed host. Network management requires a provisioned Pi image:
 
 1. Install Photobox on a host and choose a data directory. Keep the same `PHOTOBOX_DATA_DIR` for the setup command and daemon if you override its default.
 2. Run `photobox-setup-pin` in a trusted terminal. It prints a random 10-digit PIN once and stores only a slow hash in `pairing.sqlite3`. Record the PIN privately; the command refuses to replace it after setup is initialized.
@@ -30,11 +30,11 @@ This is the supported development flow until per-device images and hotspot setup
 
 The command does not create an SD-card image, configure a Wi-Fi password, start an access point, or connect the Pi to venue Wi-Fi. Do not assume a headless Pi can be reached over Wi-Fi until those networking pieces are implemented.
 
-For maintainers preparing a future per-device image, `photobox-provision --output-dir <new-directory>` creates a private credential bundle containing a Wi-Fi join QR and a manifest with the setup-PIN hash and Wi-Fi settings. The command prints the SSID, Wi-Fi password, and setup PIN once. Keep the directory private. An already-installed host can load the manifest with `PHOTOBOX_DEVICE_CONFIG=/private/path/device.json photobox`; the daemon checks that the file is owner-only and uses its setup-PIN hash. The command does not create a flashable image, apply Wi-Fi settings, or configure the Pi’s access point.
+For maintainers preparing a per-device image, `photobox-provision --output-dir <new-directory>` creates the private credential bundle. To build an image, add `--base-image <image.img.xz> --wifi-country <ISO-country-code>`. The image installs the setup hotspot profile and regulatory country. An admin can configure a WPA-Personal venue network from the admin page; NetworkManager verifies a DHCP address and gateway before the setup hotspot is disabled. A failed connection leaves the setup hotspot as the fallback. Enterprise Wi-Fi and captive-portal login are not supported.
 
 ## Three codes, three purposes
 
-`photobox-setup-pin` initializes an already-installed host. `photobox-provision --base-image <image.img.xz> --output-dir <private-directory>` creates a per-device `.img` from a generic Raspberry Pi OS Lite image. Image provisioning currently requires Linux and may request `sudo` access to loop devices and the image filesystem.
+`photobox-setup-pin` initializes an already-installed host. `photobox-provision --base-image <image.img.xz> --wifi-country <ISO-country-code> --output-dir <private-directory>` creates a per-device `.img` from a generic Raspberry Pi OS Lite image. Image provisioning currently requires Linux and may request `sudo` access to loop devices and the image filesystem.
 
 - **Wi-Fi join code:** contains the visible network name and Wi-Fi password. It lets a phone or laptop connect to the Pi’s network. It does not sign the person in to Photobox.
 - **Setup PIN:** a unique, one-time 10-digit number for the first administrator claim. It is not the Wi-Fi password and is not shared with guests. The local provisioning tool shows it when preparing that Pi’s image. The Pi stores only a hash and invalidates the PIN after a successful claim.
@@ -45,17 +45,17 @@ Do not combine these codes or post them in a public place. A hidden Wi-Fi name w
 ## Prepare one Pi
 
 1. Download the generic `.img.xz` artifact built by the project’s image workflow. It contains Raspberry Pi OS Lite and Photobox software, but no per-device credentials. The workflow currently publishes an artifact, not a release download.
-2. On a trusted Linux computer, run `photobox-provision --base-image <image.img.xz> --output-dir <new-private-directory>` for the Pi you are preparing. It creates a **per-device `.img` image**, a visible unique Wi-Fi name, a random Wi-Fi password, and a unique one-time 10-digit setup PIN. The tool displays the PIN once; write it down and keep it private. It requires loop-device and mount tools and may ask for `sudo`. Follow the tool’s instructions for saving or printing the Wi-Fi join code.
+2. On a trusted Linux computer, run `photobox-provision --base-image <image.img.xz> --wifi-country <ISO-country-code> --output-dir <new-private-directory>` for the Pi you are preparing. Use the country where the Pi will operate. It creates a **per-device `.img` image**, a visible unique Wi-Fi name, a random Wi-Fi password, and a unique one-time 10-digit setup PIN. The tool displays the PIN once; write it down and keep it private. It requires loop-device and mount tools and may ask for `sudo`. Follow the tool’s instructions for saving or printing the Wi-Fi join code.
 3. Keep the per-device image and codes together only while preparing that Pi. Do not commit them to Git, upload them to a shared CI artifact, or paste them into a public issue or chat. The Wi-Fi password, setup PIN, and guest invitation are different secrets.
 4. Write the per-device image to the Pi’s microSD card with the operating-system imaging tool recommended by the project. **Writing an image erases the selected card.** Double-check the selected drive before confirming.
 5. Put the card in the Pi, connect the camera and power, then start the Pi. The setup network has a visible name so it is easy to find; hiding it would not prevent discovery or unauthorized access.
 
-The image contains the PIN hash and Wi-Fi settings in a Photobox-service-owned, mode-0600 configuration file. It does not yet apply Wi-Fi settings or start an access point; do not assume the Pi is reachable headlessly until the network setup work is complete.
+The image contains the PIN hash and Wi-Fi settings in a Photobox-service-owned, mode-0600 configuration file, plus a root-owned NetworkManager setup profile. The Wi-Fi country is applied before NetworkManager starts. The image advertises the hostname `photobox.local`; a direct setup-hotspot address remains available if a phone does not resolve it.
 
 ## Claim the booth as administrator
 
 1. On a phone or laptop, scan the Wi-Fi join code or select the printed network name and enter its password. The setup network may say “No internet”; that is expected while connected directly to the Pi. Choose to remain connected.
-2. Open the Photobox status page using the address provided by the provisioning instructions. The planned default is `http://photobox.local`; a direct local address must be available as a fallback if the phone cannot resolve that name.
+2. Open `http://photobox.local:8000`. If the phone cannot resolve that name while connected to the setup hotspot, use `http://10.42.0.1:8000`.
 3. Enter the one-time setup PIN from the provisioning step. The first successful claim makes this browser the booth administrator. The PIN is then invalid and cannot be reused.
 4. Confirm the camera and storage status. The admin page is separate from the guest controller.
 
@@ -63,9 +63,9 @@ The Pi stores only a hash of the setup PIN. Failed claims are rate-limited. Neve
 
 ## Connect to the venue network
 
-From the administrator page, select the venue Wi-Fi and enter its password. If the Pi joins successfully and a phone on that network can reach it, the temporary setup hotspot turns off. Guests can use the venue Wi-Fi to reach Photobox.
+From the administrator page, enter the venue Wi-Fi name and password. The first implementation supports WPA-Personal networks (not enterprise sign-in or captive portals). The Pi keeps the setup hotspot available while it checks that the venue connection has an address and gateway. After a successful connection, it turns off the setup hotspot. Guests can use the venue Wi-Fi to reach Photobox.
 
-If venue Wi-Fi is unavailable or the Pi cannot connect, its visible hotspot remains available during the event. Give guests the Wi-Fi join code separately from their Photobox invitation. The two QR codes do different jobs, even when they are displayed next to each other.
+If venue Wi-Fi is unavailable or the Pi cannot connect, the setup hotspot remains available. A saved venue network is retried after reboot; NetworkManager can return to the setup hotspot if the saved network is unavailable. Give guests the Wi-Fi join code separately from their Photobox invitation. The two QR codes do different jobs, even when they are displayed next to each other.
 
 The Pi does not need internet access for local photo capture and downloads. Internet-dependent sharing is outside this setup flow.
 
@@ -89,7 +89,7 @@ Do not improvise a factory reset or delete the data directory: recovery commands
 
 - **The Pi network is missing:** check power, wait for startup, and confirm the per-device image was written to the intended card. Use Ethernet or the documented local recovery process if available.
 - **The phone says there is no internet:** while using the Pi hotspot, choose to stay connected. The local page does not require internet.
-- **The status page does not open:** make sure the phone is still on the Pi or venue network. Try the direct local address supplied by the provisioning instructions if `photobox.local` does not resolve.
+- **The status page does not open:** make sure the phone is still on the Pi or venue network. On the setup hotspot, try `http://10.42.0.1:8000` if `photobox.local` does not resolve. On venue Wi-Fi, use the IP address shown on the admin page or the venue router’s device list.
 - **The setup PIN is rejected:** check for mistyped digits and whether the PIN was already used. Repeated attempts are rate-limited. Use local recovery if it has been consumed or lost.
 - **Guests can open the page but cannot pair:** check that their guest invitation has not expired or been revoked, and that they joined a network that can reach this Pi.
 - **A camera is not available:** the booth should stay on its status page and remain configurable. The host can fix or replace the camera without losing the setup connection.

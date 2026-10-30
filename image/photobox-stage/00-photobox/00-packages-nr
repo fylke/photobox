@@ -1,1 +1,1 @@
-ffmpeg python3-venv
+avahi-daemon dnsmasq-base ffmpeg iw network-manager polkitd python3-venv wpasupplicant

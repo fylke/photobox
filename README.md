@@ -24,12 +24,15 @@ This prints the device’s SSID, Wi-Fi password, and setup PIN once; it writes `
 To put the credentials into a generic Raspberry Pi OS Lite image built by CI, run the provisioner on Linux:
 
 ```sh
-photobox-provision --base-image photobox.img.xz --output-dir "$HOME/photobox-device-setup"
+photobox-provision --base-image photobox.img.xz --wifi-country GB \
+  --output-dir "$HOME/photobox-device-setup"
 ```
 
-The command writes `photobox-device.img` beside the private credential bundle. It requires `losetup`, `lsblk`, `udevadm`, `mount`, and `install`; it may prompt for `sudo` to update the image. The image contains the PIN hash and Wi-Fi settings, not the setup PIN. This does not yet configure a hotspot or connect the Pi to Wi-Fi.
+Replace `GB` with the two-letter ISO country code where the Pi will operate. The command writes `photobox-device.img` beside the private credential bundle. It requires `losetup`, `lsblk`, `udevadm`, `mount`, and `install`; it may prompt for `sudo` to update the image. The image contains the PIN hash, a NetworkManager setup hotspot profile, and Wi-Fi settings, not the setup PIN.
 
-You can still use the bundle’s setup-PIN hash on an already-installed host by setting `PHOTOBOX_DEVICE_CONFIG` to the private `device.json` path when starting `photobox`. The daemon validates that the file is owner-only and uses its PIN hash for first-admin claim. It does not apply the Wi-Fi settings yet.
+On the provisioned image, the admin page can connect the Pi to venue WPA-Personal Wi-Fi. NetworkManager retains the setup hotspot if connection fails, and automatically retries a saved venue connection after reboot. The daemon uses NetworkManager D-Bus with a PolicyKit rule limited to network control and system connection changes; credentials are not passed as command-line arguments. These network flows still need physical Pi validation.
+
+You can still use the bundle’s setup-PIN hash on an already-installed host by setting `PHOTOBOX_DEVICE_CONFIG` to the private `device.json` path when starting `photobox`. The daemon validates that the file is owner-only and uses its PIN hash for first-admin claim. Live Wi-Fi management is only enabled on the provisioned Pi image.
 
 Start the service:
 
@@ -45,7 +48,7 @@ For development without a camera, run with the mock driver:
 PHOTOBOX_CAMERA=mock photobox
 ```
 
-The pairing PIN must still be initialized with `photobox-setup-pin` first. The Pi hotspot, Wi-Fi provisioning, and automatic network setup are not implemented yet; the phone or laptop must already be on a network that can reach the daemon.
+The pairing PIN must still be initialized with `photobox-setup-pin` first. The Pi hotspot and NetworkManager integration require the provisioned Pi image; on a development host, the phone or laptop must already be on a network that can reach the daemon.
 
 ## Configuration
 

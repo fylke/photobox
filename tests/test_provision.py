@@ -119,7 +119,9 @@ def test_device_bundle_provisions_compressed_base_image(monkeypatch, tmp_path, c
             return "/dev/loop7"
         if command[0] == "lsblk":
             return "/dev/loop7 loop7\n/dev/loop7p1 bootfs\n/dev/loop7p2 rootfs"
-        if command[0] == "install":
+        if command[0] == "install" and "-d" in command:
+            Path(command[-1]).mkdir(parents=True, exist_ok=True)
+        elif command[0] == "install":
             source = Path(command[-2])
             destination = Path(command[-1])
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -131,7 +133,16 @@ def test_device_bundle_provisions_compressed_base_image(monkeypatch, tmp_path, c
     monkeypatch.setattr(provision.sys, "platform", "linux")
     monkeypatch.setattr(provision, "_run_as_root", fake_run_as_root)
 
-    provision_device(["--base-image", str(base_image), "--output-dir", str(output_dir)])
+    provision_device(
+        [
+            "--base-image",
+            str(base_image),
+            "--wifi-country",
+            "gb",
+            "--output-dir",
+            str(output_dir),
+        ]
+    )
 
     output = capsys.readouterr().out
     pin = re.search(r"Setup PIN: ([0-9]{10})", output).group(1)
@@ -143,7 +154,16 @@ def test_device_bundle_provisions_compressed_base_image(monkeypatch, tmp_path, c
         assert stat.S_IMODE(image_path.stat().st_mode) == 0o600
     assert pin not in installed_files["device.json"].decode("utf-8")
     assert manifest["setup_pin_hash"].startswith("scrypt$")
-    assert installed_files["device.env"] == (b"PHOTOBOX_DEVICE_CONFIG=/etc/photobox/device.json\n")
+    assert manifest["wifi"]["country"] == "GB"
+    assert installed_files["device.env"] == (
+        b"PHOTOBOX_DEVICE_CONFIG=/etc/photobox/device.json\nPHOTOBOX_WIFI_COUNTRY=GB\n"
+    )
+    setup_profile = installed_files["photobox-setup.nmconnection"].decode("ascii")
+    assert "id=Photobox setup" in setup_profile
+    assert "mode=ap" in setup_profile
+    assert f"ssid={manifest['wifi']['ssid']}" in setup_profile
+    assert f"psk={manifest['wifi']['password']}" in setup_profile
+    assert "method=shared" in setup_profile
     config_install = next(
         command
         for command in commands
@@ -154,14 +174,63 @@ def test_device_bundle_provisions_compressed_base_image(monkeypatch, tmp_path, c
         for command in commands
         if command[0] == "install" and command[-1].endswith("/etc/photobox/device.env")
     )
+    profile_install = next(
+        command
+        for command in commands
+        if command[0] == "install"
+        and command[-1].endswith("/NetworkManager/system-connections/photobox-setup.nmconnection")
+    )
     assert config_install[config_install.index("-o") + 1] == "photobox"
     assert config_install[config_install.index("-g") + 1] == "photobox"
     assert env_install[env_install.index("-o") + 1] == "root"
+    assert profile_install[profile_install.index("-m") + 1] == "0600"
     assert "Per-device image:" in output
     mount_dir = next(command[-1] for command in commands if command[0] == "mount")
     assert ["mount", "/dev/loop7p2", mount_dir] in commands
     assert ["umount", mount_dir] in commands
     assert ["losetup", "--detach", "/dev/loop7"] in commands
+    assert any(
+        command[0] == "ln"
+        and command[-1].endswith("photobox-regulatory-domain.service")
+        for command in commands
+    )
+    assert any(
+        command[:2] == ["install", "-d"]
+        and command[-1].endswith("multi-user.target.wants")
+        for command in commands
+    )
+
+
+def test_image_provisioning_requires_wifi_country(tmp_path, capsys):
+    base_image = tmp_path / "generic.img"
+    base_image.write_bytes(b"generic image")
+
+    with pytest.raises(SystemExit):
+        provision_device(
+            ["--base-image", str(base_image), "--output-dir", str(tmp_path / "device")]
+        )
+
+    assert "--wifi-country" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("country", ["U1", "USA", "u", ""])
+def test_image_provisioning_rejects_malformed_wifi_country(country, tmp_path, capsys):
+    base_image = tmp_path / "generic.img"
+    base_image.write_bytes(b"generic image")
+
+    with pytest.raises(SystemExit):
+        provision_device(
+            [
+                "--base-image",
+                str(base_image),
+                "--wifi-country",
+                country,
+                "--output-dir",
+                str(tmp_path / "device"),
+            ]
+        )
+
+    assert "--wifi-country" in capsys.readouterr().err
 
 
 def test_device_bundle_removes_image_when_root_partition_is_missing(monkeypatch, tmp_path, capsys):
@@ -182,7 +251,16 @@ def test_device_bundle_removes_image_when_root_partition_is_missing(monkeypatch,
     monkeypatch.setattr(provision, "_run_as_root", fake_run_as_root)
 
     with pytest.raises(SystemExit):
-        provision_device(["--base-image", str(base_image), "--output-dir", str(output_dir)])
+        provision_device(
+            [
+                "--base-image",
+                str(base_image),
+                "--wifi-country",
+                "GB",
+                "--output-dir",
+                str(output_dir),
+            ]
+        )
 
     assert not (output_dir / "photobox-device.img").exists()
     assert ["losetup", "--detach", "/dev/loop8"] in commands

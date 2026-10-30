@@ -1,6 +1,6 @@
 # Milestone 2 Hardware Validation
 
-> **Status:** Run this checklist only after the image provisioning, setup hotspot, and phone pairing paths are implemented. They are not all available in the current release. Mocked tests do not count as physical hardware validation.
+> **Status:** The image provisioning, setup hotspot, venue Wi-Fi, and phone pairing paths are implemented but still require this physical-hardware validation. Mocked tests do not count as physical validation.
 
 This is the end-to-end acceptance run for a real Photobox Pi, webcam, and two phones. Keep each run on a disposable test event and a network you control.
 

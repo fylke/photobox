@@ -46,10 +46,13 @@ jobs:
             pi-gen/photobox/00-photobox/00-run.sh
           chmod +x pi-gen/photobox/00-photobox/00-run.sh
           cp image/photobox-stage/00-photobox/files/photobox.service \
+            image/photobox-stage/00-photobox/files/photobox-regulatory-domain.service \
+            image/photobox-stage/00-photobox/files/50-photobox-network.rules \
             pi-gen/photobox/00-photobox/files/
           cp dist/photobox-*.whl pi-gen/photobox/00-photobox/files/photobox.whl
           cat > pi-gen/photobox-config <<'EOF'
           IMG_NAME='photobox'
+          TARGET_HOSTNAME='photobox'
           RELEASE='trixie'
           ARCH='arm64'
           STAGE_LIST='stage0 stage1 stage2 photobox'

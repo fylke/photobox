@@ -157,6 +157,7 @@
       <p class="eyebrow">Booth access</p>
       <h1 id="pairing-title">Connecting</h1>
       <p id="pairing-description" class="detail"></p>
+      <p id="network-status" class="detail">Checking network status…</p>
       <form id="claim-form" hidden>
         <div class="field">
           <label for="setup-pin">One-time setup PIN</label>
@@ -165,6 +166,20 @@
         <button type="submit">Claim administrator access</button>
       </form>
       <div id="admin-invitation" hidden>
+        <h2>Wi-Fi network</h2>
+        <p>Connect this booth to venue Wi-Fi. The setup network stays available if the connection fails.</p>
+        <form id="venue-network-form">
+          <div class="field">
+            <label for="venue-ssid">Venue Wi-Fi name</label>
+            <input id="venue-ssid" name="ssid" maxlength="32" autocomplete="off" required>
+          </div>
+          <div class="field">
+            <label for="venue-password">Venue Wi-Fi password</label>
+            <input id="venue-password" name="password" type="password" minlength="8" maxlength="64" autocomplete="new-password" required>
+          </div>
+          <button id="connect-venue" class="secondary" type="submit">Connect to venue Wi-Fi</button>
+        </form>
+        <p id="network-error" class="error" role="alert" hidden></p>
         <button id="create-invitation" type="button">Create guest invitation</button>
         <div id="invitation-result" class="preview" hidden>
           <img id="invitation-qr" alt="Guest invitation QR code">
@@ -244,6 +259,9 @@
     const invitationExpiry = document.querySelector("#invitation-expiry");
     const guestList = document.querySelector("#guest-list");
     const manageInvitations = document.querySelector("#manage-invitations");
+    const networkStatus = document.querySelector("#network-status");
+    const venueNetworkForm = document.querySelector("#venue-network-form");
+    const venueNetworkError = document.querySelector("#network-error");
     let currentSession = null;
     let busy = false;
     let currentRole = null;
@@ -292,6 +310,17 @@
       manageInvitations.hidden = currentRole !== "admin";
     }
 
+    async function loadNetworkStatus() {
+      try {
+        const status = await request("/api/network/status");
+        networkStatus.textContent = status.message + (status.address ? ` Address: ${status.address}` : "");
+        venueNetworkForm.hidden = !status.available || status.mode === "unavailable";
+      } catch (error) {
+        networkStatus.textContent = error.message;
+        venueNetworkForm.hidden = true;
+      }
+    }
+
     async function loadGuestCredentials() {
       const guests = await request("/api/pairing/guests");
       guestList.replaceChildren();
@@ -301,7 +330,6 @@
         guestList.append(empty);
         return;
       }
-
       guests.forEach((guest) => {
         const row = document.createElement("li");
         const status = document.createElement("span");
@@ -537,6 +565,34 @@
       }
     });
 
+    venueNetworkForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = document.querySelector("#connect-venue");
+      button.disabled = true;
+      venueNetworkError.hidden = true;
+      try {
+        const status = await request("/api/network/venue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ssid: venueNetworkForm.elements.ssid.value,
+            password: venueNetworkForm.elements.password.value
+          })
+        });
+        venueNetworkForm.elements.password.value = "";
+        networkStatus.textContent = status.message
+          + (status.address ? ` Address: ${status.address}` : "")
+          + " If this phone disconnects, join the venue Wi-Fi to continue.";
+      } catch (error) {
+        venueNetworkError.textContent = error.message
+          + " If the network switched, reconnect to the setup or venue Wi-Fi and check status.";
+        venueNetworkError.hidden = false;
+        await loadNetworkStatus();
+      } finally {
+        button.disabled = false;
+      }
+    });
+
     document.querySelector("#open-capture").addEventListener("click", async () => {
       showCapture();
       await loadCurrentSession();
@@ -608,6 +664,7 @@
         const health = await request("/api/health");
         document.querySelector("#camera-label").textContent = health.camera;
         document.querySelector("#connection-dot").classList.add("online");
+        await loadNetworkStatus();
 
         const status = await request("/api/pairing/status");
         if (!status.configured) {

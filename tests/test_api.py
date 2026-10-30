@@ -9,6 +9,7 @@ from PIL import Image
 
 from photobox.api import create_app
 from photobox.camera import MockCamera
+from photobox.network import NetworkError, NetworkStatus
 from photobox.pairing import hash_setup_pin
 
 SETUP_PIN = "4829017365"
@@ -20,12 +21,27 @@ class FinitePreviewCamera(MockCamera):
         yield b"\xff\xd8second-frame\xff\xd9"
 
 
-def paired_client(tmp_path, camera=None):
+class FakeNetworkManager:
+    def __init__(self):
+        self.credentials = None
+
+    def status(self):
+        return NetworkStatus(True, "setup", "Connected to the Photobox setup network.", "10.42.0.1")
+
+    def configure_venue(self, ssid, password):
+        if password == "badpassword":
+            raise NetworkError("NetworkManager could not connect.")
+        self.credentials = (ssid, password)
+        return NetworkStatus(True, "venue", "Connected to venue Wi-Fi.", "192.168.1.25")
+
+
+def paired_client(tmp_path, camera=None, network_manager=None):
     client = TestClient(
         create_app(
             camera=camera,
             storage_dir=tmp_path,
             setup_pin_hash=hash_setup_pin(SETUP_PIN),
+            network_manager=network_manager,
         )
     )
     response = client.post("/api/pairing/claim", json={"pin": SETUP_PIN})
@@ -100,6 +116,8 @@ def test_screen_ui_is_served_from_root(tmp_path):
     assert "Continue" in response.text
     assert "Claim administrator access" in response.text
     assert "Create guest invitation" in response.text
+    assert "Connect to venue Wi-Fi" in response.text
+    assert "/api/network/status" in response.text
     assert "Join this booth" in response.text
     assert "Paired guest phones" in response.text
     assert "Manage guest access" in response.text
@@ -139,6 +157,66 @@ def test_unprovisioned_booth_does_not_offer_a_valid_claim(tmp_path):
         "claimed": False,
     }
     assert client.post("/api/pairing/claim", json={"pin": SETUP_PIN}).status_code == 401
+
+
+def test_network_status_is_public_and_does_not_expose_credentials(tmp_path):
+    client = TestClient(create_app(storage_dir=tmp_path, network_manager=FakeNetworkManager()))
+
+    response = client.get("/api/network/status")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "available": True,
+        "mode": "setup",
+        "message": "Connected to the Photobox setup network.",
+        "address": "10.42.0.1",
+    }
+
+
+def test_only_admin_can_configure_venue_wifi(tmp_path):
+    network = FakeNetworkManager()
+    admin = paired_client(tmp_path, network_manager=network)
+
+    unauthorized = TestClient(admin.app).post(
+        "/api/network/venue",
+        json={"ssid": "Venue", "password": "validpassword"},
+    )
+    configured = admin.post(
+        "/api/network/venue",
+        json={"ssid": "Venue", "password": "validpassword"},
+    )
+
+    assert unauthorized.status_code == 401
+    assert configured.status_code == 200
+    assert configured.json()["mode"] == "venue"
+    assert "validpassword" not in configured.text
+    assert network.credentials == ("Venue", "validpassword")
+
+
+def test_failed_venue_wifi_configuration_is_reported(tmp_path):
+    network = FakeNetworkManager()
+    admin = paired_client(tmp_path, network_manager=network)
+
+    response = admin.post(
+        "/api/network/venue",
+        json={"ssid": "Venue", "password": "badpassword"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "NetworkManager could not connect."
+
+
+def test_invalid_venue_wifi_credentials_are_rejected_before_network_change(tmp_path):
+    network = FakeNetworkManager()
+    admin = paired_client(tmp_path, network_manager=network)
+
+    response = admin.post(
+        "/api/network/venue",
+        json={"ssid": "Venue", "password": "short"},
+    )
+
+    assert response.status_code == 422
+    assert network.credentials is None
 
 
 @pytest.mark.skipif(os.name == "nt", reason="requires POSIX file permission bits")

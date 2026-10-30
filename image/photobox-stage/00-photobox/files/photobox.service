@@ -1,6 +1,6 @@
 [Unit]
 Description=Photobox photo booth daemon
-After=network.target
+After=NetworkManager.service network.target
 
 [Service]
 Type=simple

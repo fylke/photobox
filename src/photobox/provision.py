@@ -2,11 +2,13 @@ import argparse
 import json
 import lzma
 import os
+import re
 import secrets
 import stat
 import subprocess
 import sys
 import tempfile
+import uuid
 from io import BytesIO
 from pathlib import Path
 from shutil import copyfile, copyfileobj
@@ -48,6 +50,11 @@ def load_device_config(path: Path) -> dict[str, object]:
         or wifi.get("hidden") is not False
     ):
         raise ValueError("Device config contains invalid Wi-Fi settings")
+    country = wifi.get("country")
+    if country is not None and (
+        not isinstance(country, str) or not re.fullmatch(r"[A-Z]{2}", country)
+    ):
+        raise ValueError("Device config contains an invalid Wi-Fi country code")
     return manifest
 
 
@@ -87,7 +94,16 @@ def provision_device(argv: list[str] | None = None) -> None:
             "optional Raspberry Pi OS Lite .img or .img.xz file to copy and provision (Linux only)"
         ),
     )
+    parser.add_argument(
+        "--wifi-country",
+        help="two-letter ISO country code for the Pi Wi-Fi regulatory domain (required with --base-image)",
+    )
     args = parser.parse_args(argv)
+    if args.base_image is not None and (
+        args.wifi_country is None or not re.fullmatch(r"[A-Za-z]{2}", args.wifi_country)
+    ):
+        parser.error("--base-image requires --wifi-country with a two-letter ISO country code.")
+    wifi_country = args.wifi_country.upper() if args.wifi_country else None
     output_dir = args.output_dir.expanduser()
     if output_dir.is_symlink():
         print("Refusing to write provisioning secrets through a symlink.", file=sys.stderr)
@@ -108,6 +124,7 @@ def provision_device(argv: list[str] | None = None) -> None:
             "ssid": wifi_ssid,
             "password": wifi_password,
             "hidden": False,
+            **({"country": wifi_country} if wifi_country else {}),
         },
     }
     qr_image = qrcode.make(
@@ -125,8 +142,15 @@ def provision_device(argv: list[str] | None = None) -> None:
     _write_private_file(output_dir / "wifi-join.png", qr_buffer.getvalue())
     if args.base_image is not None:
         try:
-            image = _create_device_image(args.base_image.expanduser(), output_dir)
-        except (OSError, RuntimeError, ValueError, EOFError, lzma.LZMAError) as error:
+            image = _create_device_image(args.base_image.expanduser(), output_dir, manifest)
+        except (
+            OSError,
+            RuntimeError,
+            ValueError,
+            TypeError,
+            EOFError,
+            lzma.LZMAError,
+        ) as error:
             print(f"Could not provision image: {error}", file=sys.stderr)
             raise SystemExit(1) from error
 
@@ -143,7 +167,9 @@ def provision_device(argv: list[str] | None = None) -> None:
         print("The image contains the setup PIN hash and Wi-Fi settings, not the setup PIN.")
 
 
-def _create_device_image(base_image: Path, output_dir: Path) -> Path:
+def _create_device_image(
+    base_image: Path, output_dir: Path, manifest: dict[str, object]
+) -> Path:
     if sys.platform != "linux":
         raise RuntimeError("Image provisioning currently requires Linux.")
     if base_image.is_symlink() or not base_image.is_file():
@@ -184,7 +210,38 @@ def _create_device_image(base_image: Path, output_dir: Path) -> Path:
             mounted = True
             config_path = output_dir / "device.json"
             env_path = Path(mount_dir) / "photobox-device.env"
-            env_path.write_bytes(b"PHOTOBOX_DEVICE_CONFIG=/etc/photobox/device.json\n")
+            wifi = manifest["wifi"]
+            if not isinstance(wifi, dict) or not isinstance(wifi.get("country"), str):
+                raise TypeError("A Wi-Fi country code is required to build the device image.")
+            env_path.write_text(
+                "PHOTOBOX_DEVICE_CONFIG=/etc/photobox/device.json\n"
+                f"PHOTOBOX_WIFI_COUNTRY={wifi['country']}\n",
+                encoding="ascii",
+                newline="\n",
+            )
+            device_id = manifest["device_id"]
+            if not isinstance(device_id, str):
+                raise TypeError("Device config is missing a device ID.")
+            setup_profile = (
+                "[connection]\n"
+                "id=Photobox setup\n"
+                f"uuid={uuid.uuid5(uuid.NAMESPACE_DNS, 'photobox-' + device_id)}\n"
+                "type=wifi\n"
+                "autoconnect=true\n"
+                "autoconnect-priority=10\n"
+                "interface-name=wlan0\n"
+                "\n[wifi]\n"
+                "mode=ap\n"
+                f"ssid={wifi['ssid']}\n"
+                "band=bg\n"
+                "\n[wifi-security]\n"
+                "key-mgmt=wpa-psk\n"
+                f"psk={wifi['password']}\n"
+                "\n[ipv4]\n"
+                "method=shared\n"
+                "\n[ipv6]\n"
+                "method=disabled\n"
+            ).encode("ascii")
             _run_as_root(
                 [
                     "install",
@@ -199,6 +256,25 @@ def _create_device_image(base_image: Path, output_dir: Path) -> Path:
                     f"{mount_dir}/etc/photobox/device.json",
                 ]
             )
+            with tempfile.TemporaryDirectory(
+                prefix="photobox-profile-", dir=output_dir
+            ) as temp_dir:
+                profile_source = Path(temp_dir) / "photobox-setup.nmconnection"
+                profile_source.write_bytes(setup_profile)
+                _run_as_root(
+                    [
+                        "install",
+                        "-D",
+                        "-o",
+                        "root",
+                        "-g",
+                        "root",
+                        "-m",
+                        "0600",
+                        str(profile_source),
+                        f"{mount_dir}/etc/NetworkManager/system-connections/photobox-setup.nmconnection",
+                    ]
+                )
             _run_as_root(
                 [
                     "install",
@@ -211,6 +287,21 @@ def _create_device_image(base_image: Path, output_dir: Path) -> Path:
                     "0600",
                     str(env_path),
                     f"{mount_dir}/etc/photobox/device.env",
+                ]
+            )
+            _run_as_root(
+                [
+                    "install",
+                    "-d",
+                    f"{mount_dir}/etc/systemd/system/multi-user.target.wants",
+                ]
+            )
+            _run_as_root(
+                [
+                    "ln",
+                    "-s",
+                    "/etc/systemd/system/photobox-regulatory-domain.service",
+                    f"{mount_dir}/etc/systemd/system/multi-user.target.wants/photobox-regulatory-domain.service",
                 ]
             )
             _run_as_root(["umount", mount_dir])

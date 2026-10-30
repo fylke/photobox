@@ -13,6 +13,12 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from pydantic import BaseModel, Field
 
 from photobox.camera import Camera, MockCamera, camera_from_environment
+from photobox.network import (
+    DisabledNetworkManager,
+    NetworkError,
+    NetworkManager,
+    NetworkManagerAdapter,
+)
 from photobox.pairing import (
     IssuedCredential,
     PairingError,
@@ -41,11 +47,17 @@ class RedeemInvitationRequest(BaseModel):
     invitation: str = Field(min_length=20, max_length=128)
 
 
+class ConfigureVenueRequest(BaseModel):
+    ssid: str = Field(min_length=1, max_length=32)
+    password: str = Field(min_length=8, max_length=64)
+
+
 def create_app(
     camera: Camera | None = None,
     storage_dir: Path | None = None,
     setup_pin_hash: str | None = None,
     device_config_path: Path | None = None,
+    network_manager: NetworkManager | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Photobox", version="0.1.0")
     if setup_pin_hash is not None and device_config_path is not None:
@@ -57,6 +69,16 @@ def create_app(
     storage = LocalStorage(data_dir)
     manager = SessionManager(camera if camera is not None else MockCamera(), storage)
     pairing = PairingManager(storage.root / "pairing.sqlite3", setup_pin_hash)
+    if network_manager is not None:
+        network = network_manager
+    elif (
+        device_config is not None
+        and isinstance(device_config.get("wifi"), dict)
+        and device_config["wifi"].get("country") is not None
+    ):
+        network = NetworkManagerAdapter()
+    else:
+        network = DisabledNetworkManager()
     app.state.session_manager = manager
     app.state.pairing_manager = pairing
     app.state.device_config = device_config
@@ -132,6 +154,23 @@ def create_app(
     @app.get("/api/pairing/status")
     def pairing_status() -> dict[str, bool]:
         return pairing.status()
+
+    @app.get("/api/network/status")
+    def network_status() -> dict[str, bool | str | None]:
+        return network.status().as_dict()
+
+    @app.post("/api/network/venue")
+    def configure_venue_network(
+        payload: ConfigureVenueRequest, request: Request
+    ) -> dict[str, bool | str | None]:
+        validate_origin(request)
+        require_admin(request)
+        try:
+            return network.configure_venue(payload.ssid, payload.password).as_dict()
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except NetworkError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
 
     @app.post("/api/pairing/claim")
     def claim_admin(payload: ClaimRequest, request: Request) -> JSONResponse:
