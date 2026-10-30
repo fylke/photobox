@@ -4,8 +4,10 @@ import sqlite3
 import stat
 
 import pytest
+from fastapi.testclient import TestClient
 
 from photobox import provision
+from photobox.api import create_app
 from photobox.pairing import PairingManager, hash_setup_pin
 from photobox.provision import main, provision_device
 
@@ -98,3 +100,21 @@ def test_device_bundle_refuses_nonempty_output_directory(tmp_path, capsys):
 
     assert existing_file.read_text(encoding="utf-8") == "existing setup"
     assert "not empty" in capsys.readouterr().err
+
+
+def test_generated_device_bundle_can_claim_admin_on_installed_host(tmp_path, capsys):
+    bundle_dir = tmp_path / "device"
+    provision_device(["--output-dir", str(bundle_dir)])
+    output = capsys.readouterr().out
+    pin = re.search(r"Setup PIN: ([0-9]{10})", output).group(1)
+    client = TestClient(
+        create_app(
+            storage_dir=tmp_path / "runtime",
+            device_config_path=bundle_dir / "device.json",
+        )
+    )
+
+    claim = client.post("/api/pairing/claim", json={"pin": pin})
+
+    assert claim.status_code == 200
+    assert claim.json() == {"role": "admin"}

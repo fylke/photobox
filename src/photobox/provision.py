@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import secrets
+import stat
 import sys
 from io import BytesIO
 from pathlib import Path
@@ -9,6 +10,41 @@ from pathlib import Path
 import qrcode
 
 from photobox.pairing import PairingError, PairingManager, generate_setup_pin, hash_setup_pin
+
+
+def load_device_config(path: Path) -> dict[str, object]:
+    path = Path(path)
+    if path.is_symlink():
+        raise ValueError("Device config must not be a symlink")
+    try:
+        mode = stat.S_IMODE(path.stat().st_mode)
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"Could not read device config: {error}") from error
+    if mode & 0o077:
+        raise ValueError("Device config must be readable only by its owner (mode 0600)")
+    if not isinstance(manifest, dict) or manifest.get("version") != 1:
+        raise ValueError("Unsupported device config version")
+
+    pin_hash = manifest.get("setup_pin_hash")
+    if not isinstance(pin_hash, str):
+        raise TypeError("Device config is missing a setup PIN hash")
+    try:
+        algorithm, salt_hex, digest_hex = pin_hash.split("$", maxsplit=2)
+        if algorithm != "scrypt" or len(bytes.fromhex(salt_hex)) != 16 or len(bytes.fromhex(digest_hex)) != 32:
+            raise ValueError
+    except ValueError as error:
+        raise ValueError("Device config contains an invalid setup PIN hash") from error
+
+    wifi = manifest.get("wifi")
+    if (
+        not isinstance(wifi, dict)
+        or not isinstance(wifi.get("ssid"), str)
+        or not isinstance(wifi.get("password"), str)
+        or wifi.get("hidden") is not False
+    ):
+        raise ValueError("Device config contains invalid Wi-Fi settings")
+    return manifest
 
 
 def main() -> None:

@@ -30,7 +30,7 @@ This is the supported development flow until per-device images and hotspot setup
 
 The command does not create an SD-card image, configure a Wi-Fi password, start an access point, or connect the Pi to venue Wi-Fi. Do not assume a headless Pi can be reached over Wi-Fi until those networking pieces are implemented.
 
-For maintainers preparing a future per-device image, `photobox-provision --output-dir <new-directory>` creates a private credential bundle containing a Wi-Fi join QR and a manifest with the setup-PIN hash and Wi-Fi settings. The command prints the SSID, Wi-Fi password, and setup PIN once. Keep the directory private. The manifest is not imported by the running daemon yet, and the command does not create a flashable image or configure the Pi’s access point.
+For maintainers preparing a future per-device image, `photobox-provision --output-dir <new-directory>` creates a private credential bundle containing a Wi-Fi join QR and a manifest with the setup-PIN hash and Wi-Fi settings. The command prints the SSID, Wi-Fi password, and setup PIN once. Keep the directory private. An already-installed host can load the manifest with `PHOTOBOX_DEVICE_CONFIG=/private/path/device.json photobox`; the daemon checks that the file is owner-only and uses its setup-PIN hash. The command does not create a flashable image, apply Wi-Fi settings, or configure the Pi’s access point.
 
 ## Three codes, three purposes
 

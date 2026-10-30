@@ -21,6 +21,8 @@ photobox-provision --output-dir "$HOME/photobox-device-setup"
 
 This prints the device’s SSID, Wi-Fi password, and setup PIN once; it writes `device.json` and a Wi-Fi join QR with owner-only permissions. **It does not create or modify a bootable image, configure a hotspot, or connect a Pi to Wi-Fi yet.** Keep the output directory private and out of Git/shared CI artifacts.
 
+You can use the bundle’s setup-PIN hash on an already-installed host by setting `PHOTOBOX_DEVICE_CONFIG` to the private `device.json` path when starting `photobox`. The daemon validates that the file is owner-only and uses its PIN hash for first-admin claim. It does not apply the Wi-Fi settings yet.
+
 Start the service:
 
 ```sh

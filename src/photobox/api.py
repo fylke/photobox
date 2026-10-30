@@ -20,6 +20,7 @@ from photobox.pairing import (
     PairingRateLimited,
     Principal,
 )
+from photobox.provision import load_device_config
 from photobox.session import InvalidTransition, SessionConflict, SessionManager
 from photobox.storage import LocalStorage
 
@@ -44,14 +45,21 @@ def create_app(
     camera: Camera | None = None,
     storage_dir: Path | None = None,
     setup_pin_hash: str | None = None,
+    device_config_path: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Photobox", version="0.1.0")
+    if setup_pin_hash is not None and device_config_path is not None:
+        raise ValueError("Choose either setup_pin_hash or device_config_path, not both")
+    device_config = load_device_config(device_config_path) if device_config_path else None
+    if device_config is not None:
+        setup_pin_hash = str(device_config["setup_pin_hash"])
     data_dir = storage_dir or Path(os.environ.get("PHOTOBOX_DATA_DIR", "~/photobox"))
     storage = LocalStorage(data_dir)
     manager = SessionManager(camera if camera is not None else MockCamera(), storage)
     pairing = PairingManager(storage.root / "pairing.sqlite3", setup_pin_hash)
     app.state.session_manager = manager
     app.state.pairing_manager = pairing
+    app.state.device_config = device_config
     screen_html = files("photobox").joinpath("static", "index.html").read_text(encoding="utf-8")
     controller_lock = Lock()
     controller_credential_id: str | None = None
@@ -301,4 +309,9 @@ def create_app(
 app = create_app(
     camera=camera_from_environment(),
     setup_pin_hash=os.environ.get("PHOTOBOX_SETUP_PIN_HASH"),
+    device_config_path=(
+        Path(os.environ["PHOTOBOX_DEVICE_CONFIG"])
+        if os.environ.get("PHOTOBOX_DEVICE_CONFIG")
+        else None
+    ),
 )

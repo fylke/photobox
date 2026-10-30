@@ -166,6 +166,14 @@ class PairingManager:
                         "INSERT INTO settings (key, value) VALUES ('setup_pin_hash', ?)",
                         (setup_pin_hash,),
                     )
+                else:
+                    stored_hash = connection.execute(
+                        "SELECT value FROM settings WHERE key = 'setup_pin_hash'"
+                    ).fetchone()
+                    if stored_hash is not None and not hmac.compare_digest(
+                        stored_hash["value"], setup_pin_hash
+                    ):
+                        raise PairingError("Pairing database has a different setup PIN")
 
     def status(self) -> dict[str, bool]:
         with self._connect() as connection:

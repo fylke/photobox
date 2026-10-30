@@ -61,6 +61,16 @@ class PairingManagerTests(unittest.TestCase):
         self.assertNotIn(self.pin.encode(), database_bytes)
         self.assertNotIn(admin.token.encode(), database_bytes)
 
+    def test_reopening_with_a_different_setup_pin_hash_is_rejected(self):
+        PairingManager(self.directory / "pairing.sqlite3", self.pin_hash)
+
+        with self.assertRaisesRegex(PairingError, "different setup PIN"):
+            PairingManager(
+                self.directory / "pairing.sqlite3",
+                hash_setup_pin("1234567890"),
+                clock=self.clock,
+            )
+
     def test_invitation_is_one_use_and_guest_can_be_revoked(self):
         admin = self.manager.claim_admin(self.pin)
         invitation = self.manager.create_invitation(admin.token)

@@ -1,6 +1,8 @@
 import base64
+import json
 from io import BytesIO
 
+import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -136,6 +138,54 @@ def test_unprovisioned_booth_does_not_offer_a_valid_claim(tmp_path):
         "claimed": False,
     }
     assert client.post("/api/pairing/claim", json={"pin": SETUP_PIN}).status_code == 401
+
+
+def test_private_device_manifest_configures_first_admin_claim(tmp_path):
+    device_config = tmp_path / "device.json"
+    device_config.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "device_id": "A1B2C3D4",
+                "setup_pin_hash": hash_setup_pin(SETUP_PIN),
+                "wifi": {
+                    "ssid": "Photobox-A1B2C3D4",
+                    "password": "a-private-wifi-password",
+                    "hidden": False,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    device_config.chmod(0o600)
+    client = TestClient(create_app(storage_dir=tmp_path, device_config_path=device_config))
+
+    assert client.get("/api/pairing/status").json() == {
+        "configured": True,
+        "claimed": False,
+    }
+    assert client.post("/api/pairing/claim", json={"pin": SETUP_PIN}).status_code == 200
+
+
+def test_device_manifest_refuses_group_readable_secrets(tmp_path):
+    device_config = tmp_path / "device.json"
+    device_config.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "setup_pin_hash": hash_setup_pin(SETUP_PIN),
+                "wifi": {
+                    "ssid": "Photobox-A1B2C3D4",
+                    "password": "a-private-wifi-password",
+                    "hidden": False,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="mode 0600"):
+        create_app(storage_dir=tmp_path, device_config_path=device_config)
 
 
 def test_admin_can_invite_guest_and_guest_cannot_create_invitation(tmp_path):

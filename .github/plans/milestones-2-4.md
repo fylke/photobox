@@ -1,6 +1,6 @@
 # Photobox Implementation Plan: Milestones 2–4
 
-**Status (2026-10-30):** Milestone 1 is implemented in commit `10286a8`; physical webcam verification remains outstanding. Milestone 2 is in progress: setup PIN bootstrap, pairing/invitation API and UI, controller leases, mock/V4L2 MJPEG preview, and a private per-device credential bundle with Wi-Fi QR are implemented. The bundle is not consumed by an image builder yet; bootable image creation, applying Wi-Fi settings to the Pi/AP, and venue Wi-Fi management are not implemented. Milestones 3–4 have not started.
+**Status (2026-10-30):** Milestone 1 is implemented in commit `10286a8`; physical webcam verification remains outstanding. Milestone 2 is in progress: setup PIN bootstrap, pairing/invitation API and UI, controller leases, mock/V4L2 MJPEG preview, and a private per-device credential bundle with Wi-Fi QR are implemented. The daemon can consume the bundle’s PIN hash on an installed host via `PHOTOBOX_DEVICE_CONFIG`; bootable image creation, applying Wi-Fi settings to the Pi/AP, and venue Wi-Fi management are not implemented. Milestones 3–4 have not started.
 
 This plan is the contributor-facing sequence through the media milestone. The user-facing, beginner-oriented setup workflow is in [First Boot and Pairing](../../docs/first-boot-and-pairing.md). Keep the two documents in sync as implementation decisions become code.
 
