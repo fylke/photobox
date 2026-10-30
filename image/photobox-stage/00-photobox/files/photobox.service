@@ -1,0 +1,24 @@
+[Unit]
+Description=Photobox photo booth daemon
+After=network.target
+
+[Service]
+Type=simple
+User=photobox
+Group=photobox
+SupplementaryGroups=video
+Environment=PHOTOBOX_CAMERA=webcam
+Environment=PHOTOBOX_DATA_DIR=/var/lib/photobox
+EnvironmentFile=-/etc/photobox/device.env
+ExecStart=/opt/photobox/venv/bin/photobox
+Restart=on-failure
+RestartSec=2
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/photobox
+
+[Install]
+WantedBy=multi-user.target

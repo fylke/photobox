@@ -1,5 +1,6 @@
 import base64
 import json
+import os
 from io import BytesIO
 
 import pytest
@@ -140,6 +141,7 @@ def test_unprovisioned_booth_does_not_offer_a_valid_claim(tmp_path):
     assert client.post("/api/pairing/claim", json={"pin": SETUP_PIN}).status_code == 401
 
 
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX file permission bits")
 def test_private_device_manifest_configures_first_admin_claim(tmp_path):
     device_config = tmp_path / "device.json"
     device_config.write_text(
@@ -167,6 +169,7 @@ def test_private_device_manifest_configures_first_admin_claim(tmp_path):
     assert client.post("/api/pairing/claim", json={"pin": SETUP_PIN}).status_code == 200
 
 
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX file permission bits")
 def test_device_manifest_refuses_group_readable_secrets(tmp_path):
     device_config = tmp_path / "device.json"
     device_config.write_text(

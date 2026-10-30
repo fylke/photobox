@@ -1,7 +1,10 @@
 import json
+import lzma
+import os
 import re
 import sqlite3
 import stat
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -83,10 +86,11 @@ def test_device_bundle_contains_private_manifest_and_wifi_qr(monkeypatch, tmp_pa
         f"WIFI:T:WPA;S:{manifest['wifi']['ssid']};P:{manifest['wifi']['password']};H:false;;"
     ]
     assert wifi_qr_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
-    assert "not a flashable OS image" in output
-    assert stat.S_IMODE(output_dir.stat().st_mode) == 0o700
-    assert stat.S_IMODE(manifest_path.stat().st_mode) == 0o600
-    assert stat.S_IMODE(wifi_qr_path.stat().st_mode) == 0o600
+    assert "No bootable image was created" in output
+    if os.name != "nt":
+        assert stat.S_IMODE(output_dir.stat().st_mode) == 0o700
+        assert stat.S_IMODE(manifest_path.stat().st_mode) == 0o600
+        assert stat.S_IMODE(wifi_qr_path.stat().st_mode) == 0o600
 
 
 def test_device_bundle_refuses_nonempty_output_directory(tmp_path, capsys):
@@ -102,6 +106,90 @@ def test_device_bundle_refuses_nonempty_output_directory(tmp_path, capsys):
     assert "not empty" in capsys.readouterr().err
 
 
+def test_device_bundle_provisions_compressed_base_image(monkeypatch, tmp_path, capsys):
+    base_image = tmp_path / "generic.img.xz"
+    base_image.write_bytes(lzma.compress(b"minimal base image"))
+    output_dir = tmp_path / "device"
+    commands = []
+    installed_files = {}
+
+    def fake_run_as_root(command):
+        commands.append(command)
+        if command[0] == "losetup" and "--find" in command:
+            return "/dev/loop7"
+        if command[0] == "lsblk":
+            return "/dev/loop7 loop7\n/dev/loop7p1 bootfs\n/dev/loop7p2 rootfs"
+        if command[0] == "install":
+            source = Path(command[-2])
+            destination = Path(command[-1])
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(source.read_bytes())
+            destination.chmod(0o600)
+            installed_files[destination.name] = destination.read_bytes()
+        return ""
+
+    monkeypatch.setattr(provision.sys, "platform", "linux")
+    monkeypatch.setattr(provision, "_run_as_root", fake_run_as_root)
+
+    provision_device(["--base-image", str(base_image), "--output-dir", str(output_dir)])
+
+    output = capsys.readouterr().out
+    pin = re.search(r"Setup PIN: ([0-9]{10})", output).group(1)
+    image_path = output_dir / "photobox-device.img"
+    manifest = json.loads(installed_files["device.json"])
+
+    assert image_path.read_bytes() == b"minimal base image"
+    if os.name != "nt":
+        assert stat.S_IMODE(image_path.stat().st_mode) == 0o600
+    assert pin not in installed_files["device.json"].decode("utf-8")
+    assert manifest["setup_pin_hash"].startswith("scrypt$")
+    assert installed_files["device.env"] == (b"PHOTOBOX_DEVICE_CONFIG=/etc/photobox/device.json\n")
+    config_install = next(
+        command
+        for command in commands
+        if command[0] == "install" and command[-1].endswith("/etc/photobox/device.json")
+    )
+    env_install = next(
+        command
+        for command in commands
+        if command[0] == "install" and command[-1].endswith("/etc/photobox/device.env")
+    )
+    assert config_install[config_install.index("-o") + 1] == "photobox"
+    assert config_install[config_install.index("-g") + 1] == "photobox"
+    assert env_install[env_install.index("-o") + 1] == "root"
+    assert "Per-device image:" in output
+    mount_dir = next(command[-1] for command in commands if command[0] == "mount")
+    assert ["mount", "/dev/loop7p2", mount_dir] in commands
+    assert ["umount", mount_dir] in commands
+    assert ["losetup", "--detach", "/dev/loop7"] in commands
+
+
+def test_device_bundle_removes_image_when_root_partition_is_missing(monkeypatch, tmp_path, capsys):
+    base_image = tmp_path / "generic.img"
+    base_image.write_bytes(b"generic image")
+    output_dir = tmp_path / "device"
+    commands = []
+
+    def fake_run_as_root(command):
+        commands.append(command)
+        if command[0] == "losetup" and "--find" in command:
+            return "/dev/loop8"
+        if command[0] == "lsblk":
+            return "/dev/loop8p1 bootfs"
+        return ""
+
+    monkeypatch.setattr(provision.sys, "platform", "linux")
+    monkeypatch.setattr(provision, "_run_as_root", fake_run_as_root)
+
+    with pytest.raises(SystemExit):
+        provision_device(["--base-image", str(base_image), "--output-dir", str(output_dir)])
+
+    assert not (output_dir / "photobox-device.img").exists()
+    assert ["losetup", "--detach", "/dev/loop8"] in commands
+    assert "exactly one partition labeled rootfs" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX file permission bits")
 def test_generated_device_bundle_can_claim_admin_on_installed_host(tmp_path, capsys):
     bundle_dir = tmp_path / "device"
     provision_device(["--output-dir", str(bundle_dir)])

@@ -1,0 +1,85 @@
+name: Build Raspberry Pi image
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-image.yml"
+      - "image/**"
+      - "pyproject.toml"
+      - "src/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build Photobox wheel
+        run: python -m pip wheel --no-deps --wheel-dir dist .
+
+      - uses: actions/checkout@v4
+        with:
+          repository: RPi-Distro/pi-gen
+          ref: c851f00178c64b87a86c06c2be216bd89d62e55b
+          path: pi-gen
+
+      - name: Prepare minimal image build
+        run: |
+          mkdir -p pi-gen/photobox/00-photobox/files
+          cp image/photobox-stage/EXPORT_IMAGE pi-gen/photobox/EXPORT_IMAGE
+          cp image/photobox-stage/prerun.sh pi-gen/photobox/prerun.sh
+          chmod +x pi-gen/photobox/prerun.sh
+          touch pi-gen/stage2/SKIP_IMAGES
+          cp image/photobox-stage/00-photobox/00-packages-nr \
+            image/photobox-stage/00-photobox/00-run-chroot.sh \
+            pi-gen/photobox/00-photobox/
+          cp image/photobox-stage/00-photobox/00-run.sh \
+            pi-gen/photobox/00-photobox/00-run.sh
+          chmod +x pi-gen/photobox/00-photobox/00-run.sh
+          cp image/photobox-stage/00-photobox/files/photobox.service \
+            pi-gen/photobox/00-photobox/files/
+          cp dist/photobox-*.whl pi-gen/photobox/00-photobox/files/photobox.whl
+          cat > pi-gen/photobox-config <<'EOF'
+          IMG_NAME='photobox'
+          RELEASE='trixie'
+          ARCH='arm64'
+          STAGE_LIST='stage0 stage1 stage2 photobox'
+          DEPLOY_COMPRESSION='xz'
+          ENABLE_SSH=0
+          ENABLE_CLOUD_INIT=0
+          EOF
+          sudo apt-get update
+          sudo apt-get install -y \
+            arch-test bc bmap-tools coreutils curl debootstrap dosfstools \
+            e2fsprogs file gpg grep kmod libcap2-bin parted pigz quilt \
+            qemu-user-binfmt rsync xxd xz-utils zerofree zip
+
+      - name: Build generic Raspberry Pi OS Lite image
+        working-directory: pi-gen
+        run: sudo ./build.sh -c photobox-config
+
+      - name: Verify and checksum generic image
+        run: |
+          set -euo pipefail
+          mapfile -t images < <(find pi-gen/deploy -maxdepth 1 -name '*.img.xz' -print)
+          test "${#images[@]}" -eq 1
+          image="${images[0]}"
+          xz --test "$image"
+          sha256sum "$image" | tee pi-gen/deploy/SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: photobox-raspios-lite-arm64
+          path: pi-gen/deploy/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

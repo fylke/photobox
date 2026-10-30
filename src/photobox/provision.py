@@ -1,11 +1,15 @@
 import argparse
 import json
+import lzma
 import os
 import secrets
 import stat
+import subprocess
 import sys
+import tempfile
 from io import BytesIO
 from pathlib import Path
+from shutil import copyfile, copyfileobj
 
 import qrcode
 
@@ -68,13 +72,20 @@ def main() -> None:
 
 def provision_device(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description="Create private, per-device Photobox setup credentials and a Wi-Fi QR."
+        description="Create private, per-device Photobox credentials and optionally provision an image."
     )
     parser.add_argument(
         "--output-dir",
         required=True,
         type=Path,
         help="new or empty directory for private per-device provisioning files",
+    )
+    parser.add_argument(
+        "--base-image",
+        type=Path,
+        help=(
+            "optional Raspberry Pi OS Lite .img or .img.xz file to copy and provision (Linux only)"
+        ),
     )
     args = parser.parse_args(argv)
     output_dir = args.output_dir.expanduser()
@@ -112,6 +123,12 @@ def provision_device(argv: list[str] | None = None) -> None:
         (json.dumps(manifest, indent=2) + "\n").encode("utf-8"),
     )
     _write_private_file(output_dir / "wifi-join.png", qr_buffer.getvalue())
+    if args.base_image is not None:
+        try:
+            image = _create_device_image(args.base_image.expanduser(), output_dir)
+        except (OSError, RuntimeError, ValueError, EOFError, lzma.LZMAError) as error:
+            print(f"Could not provision image: {error}", file=sys.stderr)
+            raise SystemExit(1) from error
 
     print("Per-device setup credentials created. Record these privately:")
     print(f"Device: {device_id}")
@@ -119,7 +136,120 @@ def provision_device(argv: list[str] | None = None) -> None:
     print(f"Wi-Fi password: {wifi_password}")
     print(f"Setup PIN: {setup_pin}")
     print(f"Private config and Wi-Fi QR: {output_dir}")
-    print("This is not a flashable OS image; the image builder is not implemented yet.")
+    if args.base_image is None:
+        print("No bootable image was created; provide --base-image to provision one.")
+    else:
+        print(f"Per-device image: {image}")
+        print("The image contains the setup PIN hash and Wi-Fi settings, not the setup PIN.")
+
+
+def _create_device_image(base_image: Path, output_dir: Path) -> Path:
+    if sys.platform != "linux":
+        raise RuntimeError("Image provisioning currently requires Linux.")
+    if base_image.is_symlink() or not base_image.is_file():
+        raise ValueError("Base image must be an existing regular file, not a symlink.")
+
+    image_path = output_dir / "photobox-device.img"
+    if image_path.exists():
+        raise FileExistsError(f"Refusing to overwrite {image_path}")
+
+    loop_device: str | None = None
+    mounted = False
+    succeeded = False
+    try:
+        if base_image.suffix == ".xz":
+            with lzma.open(base_image, "rb") as source, image_path.open("wb") as target:
+                copyfileobj(source, target)
+        else:
+            copyfile(base_image, image_path)
+        os.chmod(image_path, 0o600)
+
+        loop_device = _run_as_root(["losetup", "--find", "--show", "--partscan", str(image_path)])
+        if not loop_device.startswith("/dev/"):
+            raise RuntimeError("losetup did not return a valid loop device")
+        _run_as_root(["udevadm", "settle"])
+        partitions = _run_as_root(
+            ["lsblk", "--raw", "--noheadings", "--output", "PATH,LABEL", loop_device]
+        )
+        root_partitions = []
+        for line in partitions.splitlines():
+            fields = line.split(maxsplit=1)
+            if len(fields) == 2 and fields[1] == "rootfs":
+                root_partitions.append(fields[0])
+        if len(root_partitions) != 1:
+            raise RuntimeError("Base image must contain exactly one partition labeled rootfs.")
+
+        with tempfile.TemporaryDirectory(prefix="photobox-image-") as mount_dir:
+            _run_as_root(["mount", root_partitions[0], mount_dir])
+            mounted = True
+            config_path = output_dir / "device.json"
+            env_path = Path(mount_dir) / "photobox-device.env"
+            env_path.write_bytes(b"PHOTOBOX_DEVICE_CONFIG=/etc/photobox/device.json\n")
+            _run_as_root(
+                [
+                    "install",
+                    "-D",
+                    "-o",
+                    "photobox",
+                    "-g",
+                    "photobox",
+                    "-m",
+                    "0600",
+                    str(config_path),
+                    f"{mount_dir}/etc/photobox/device.json",
+                ]
+            )
+            _run_as_root(
+                [
+                    "install",
+                    "-D",
+                    "-o",
+                    "root",
+                    "-g",
+                    "root",
+                    "-m",
+                    "0600",
+                    str(env_path),
+                    f"{mount_dir}/etc/photobox/device.env",
+                ]
+            )
+            _run_as_root(["umount", mount_dir])
+            mounted = False
+        succeeded = True
+    finally:
+        try:
+            if mounted:
+                _run_as_root(["umount", mount_dir])
+        finally:
+            try:
+                if loop_device is not None:
+                    _run_as_root(["losetup", "--detach", loop_device])
+            finally:
+                if not succeeded:
+                    image_path.unlink(missing_ok=True)
+
+    return image_path
+
+
+def _run_as_root(command: list[str]) -> str:
+    privileged_command = command
+    if os.geteuid() != 0:
+        privileged_command = ["sudo", *command]
+    try:
+        result = subprocess.run(
+            privileged_command,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as error:
+        raise RuntimeError(f"Required image tool is unavailable: {command[0]}") from error
+    except subprocess.CalledProcessError as error:
+        detail = error.stderr.strip() or error.stdout.strip()
+        raise RuntimeError(
+            detail or f"{command[0]} failed with status {error.returncode}"
+        ) from error
+    return result.stdout.strip()
 
 
 def _escape_wifi_qr_value(value: str) -> str:
