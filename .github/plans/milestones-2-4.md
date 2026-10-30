@@ -1,6 +1,6 @@
 # Photobox Implementation Plan: Milestones 2–4
 
-**Status (2026-10-31):** Milestone 1 is implemented in commit `10286a8`; physical webcam verification remains outstanding. Milestone 2 is implemented in code: setup PIN bootstrap, pairing/invitation API and UI, controller leases, mock/V4L2 MJPEG preview, per-device credential bundles, a minimal Raspberry Pi OS Lite image-build workflow, Linux-based image provisioning with a NetworkManager setup hotspot, and admin-controlled WPA-Personal venue Wi-Fi setup. The image workflow and network integration still need CI and physical Pi validation. Milestone 3 is in progress: camera capabilities, availability, role assignment, client bindings, status reporting, and generic gphoto2 still capture have initial implementations; DSLR model validation and the remaining disconnect/preview fallbacks remain. Milestone 4 has not started.
+**Status (2026-10-31):** Milestone 1 is implemented in commit `10286a8`; physical webcam verification remains outstanding. Milestone 2 is implemented in code: setup PIN bootstrap, pairing/invitation API and UI, controller leases, mock/V4L2 MJPEG preview, per-device credential bundles, a minimal Raspberry Pi OS Lite image-build workflow, Linux-based image provisioning with a NetworkManager setup hotspot, and admin-controlled WPA-Personal venue Wi-Fi setup. The image workflow and network integration still need CI and physical Pi validation. Milestone 3 is in progress: camera capabilities, availability, role assignment, client bindings, status reporting, and generic gphoto2 still capture have initial implementations; DSLR model validation and hot-plug recovery remain. Milestone 4 is in progress: deterministic vertical-strip composition, media sidecars, and a paired-user session gallery with QR are implemented; configurable overlays, GIF generation, and broader acceptance validation remain.
 
 This plan is the contributor-facing sequence through the media milestone. The user-facing, beginner-oriented setup workflow is in [First Boot and Pairing](../../docs/first-boot-and-pairing.md). Keep the two documents in sync as implementation decisions become code.
 
@@ -52,10 +52,10 @@ Do not claim physical camera support from mock/subprocess tests alone.
 
 ## Milestone 4: Media
 
-1. Extend storage to enumerate sessions/photos and save composed outputs beside immutable originals, with a JSON sidecar for relevant capture/media metadata.
+1. Extend storage to enumerate sessions/photos and save composed outputs beside immutable originals, with a JSON sidecar for relevant capture/media metadata. **Session/photo enumeration, deterministic vertical strip composition, and media sidecar implemented.**
 2. Add Pillow for deterministic PNG-frame and strip composition. Support built-in strip layouts and locally supplied overlays selected through configuration; validate input dimensions and resource limits.
 3. Add GIF generation from preview frames, with timed still captures as fallback. Enforce duration, FPS, and width server-side; process asynchronously/off the request path; reduce quality or return a clear media error without blocking still capture.
-4. Add a session-scoped gallery endpoint/view and download QR. Reuse the individual-photo route, authorize access using the paired guest/session scope, and ensure other sessions are not exposed.
+4. Add a session-scoped gallery endpoint/view and download QR. Reuse the individual-photo route, authorize access using the paired guest/session scope, and ensure other sessions are not exposed. **Paired-user session gallery/link/QR implemented; no event-wide listing.**
 5. Update the operator guide with the actual media/gallery workflow; keep event-wide album browsing, voting, reporting, and moderation deferred.
 
 **Milestone 4 acceptance:** tests prove originals remain unchanged; frame/strip output has deterministic dimensions and slot order; GIF limits and encoder failure behavior are enforced; gallery/download/QR access is session-scoped. Run the full test suite and Ruff, build a wheel and verify packaged assets, and smoke-test desktop/mobile browser flows.

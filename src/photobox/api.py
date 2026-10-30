@@ -120,7 +120,9 @@ def create_app(
         if (parsed_origin.scheme, parsed_origin.netloc) != (expected.scheme, expected.netloc):
             raise HTTPException(status_code=403, detail="Request origin is not allowed")
 
-    def set_credential_cookie(response: JSONResponse, credential: IssuedCredential, request: Request):
+    def set_credential_cookie(
+        response: JSONResponse, credential: IssuedCredential, request: Request
+    ):
         cookie_options: dict[str, object] = {
             "key": _COOKIE_NAME,
             "value": credential.token,
@@ -359,16 +361,66 @@ def create_app(
         download: bool = True,
     ) -> FileResponse:
         principal = require_principal(request)
-        if manager.current is None or manager.current.id != session_id:
+        persisted_session = manager.storage.read_session(session_id)
+        is_current = manager.current is not None and manager.current.id == session_id
+        if persisted_session is None and not is_current:
             raise HTTPException(status_code=404, detail="Photo not found")
-        if download:
+        session_record = (
+            persisted_session if persisted_session is not None else manager.current.to_dict()
+        )
+        if photo_id not in session_record.get("photo_ids", []):
+            raise HTTPException(status_code=404, detail="Photo not found")
+        if download and is_current and persisted_session is None:
             with controller_lock:
                 if controller_credential_id != principal.credential_id:
-                    raise HTTPException(status_code=403, detail="Only the session controller can download")
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Only the session controller can download during capture.",
+                    )
         path = manager.storage.photo_path(session_id, photo_id)
         if path is None:
             raise HTTPException(status_code=404, detail="Photo not found")
         return FileResponse(path, filename=path.name if download else None)
+
+    @app.get("/api/sessions/{session_id}/gallery")
+    def get_gallery(session_id: str, request: Request) -> dict[str, object]:
+        require_principal(request)
+        session = manager.storage.read_session(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Gallery not found")
+        photos = manager.storage.list_photos(session_id)
+        strip_path = manager.storage.composed_path(session_id)
+        gallery_url = f"{str(request.base_url).rstrip('/')}/#/gallery/{session_id}"
+        qr_image = qrcode.make(gallery_url)
+        qr_buffer = BytesIO()
+        qr_image.save(qr_buffer, format="PNG")
+        qr_data_url = "data:image/png;base64," + base64.b64encode(qr_buffer.getvalue()).decode(
+            "ascii"
+        )
+        return {
+            "session_id": session_id,
+            "photos": [
+                {
+                    "photo_id": photo["photo_id"],
+                    "url": f"/api/sessions/{session_id}/photos/{photo['photo_id']}",
+                }
+                for photo in photos
+            ],
+            "strip_url": (
+                f"/api/sessions/{session_id}/media/strip" if strip_path is not None else None
+            ),
+            "url": gallery_url,
+            "qr_data_url": qr_data_url,
+        }
+
+    @app.get("/api/sessions/{session_id}/media/strip")
+    def get_composed_strip(session_id: str, request: Request) -> FileResponse:
+        require_principal(request)
+        session = manager.storage.read_session(session_id)
+        path = manager.storage.composed_path(session_id)
+        if session is None or path is None:
+            raise HTTPException(status_code=404, detail="Composed strip not found")
+        return FileResponse(path, filename=path.name, media_type="image/jpeg")
 
     return app
 

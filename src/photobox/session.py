@@ -100,6 +100,10 @@ class SessionManager:
                 else SessionState.COMPOSING
             )
         elif session.state is SessionState.COMPOSING:
+            try:
+                self.storage.compose_strip(session.id, session.photo_ids)
+            except (OSError, RuntimeError, ValueError) as error:
+                raise RuntimeError(f"Could not compose the photo strip: {error}") from error
             session.state = SessionState.DONE
             self.storage.save_session(session.to_dict())
         else:

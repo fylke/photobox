@@ -74,10 +74,12 @@ The Pi does not need internet access for local photo capture and downloads. Inte
 1. From the administrator page, create a guest invitation. Invitations expire and can be revoked.
 2. Show the guest invitation QR only to people who should join the booth. Do not confuse it with the Wi-Fi join QR.
 3. Guests first connect to venue Wi-Fi or the Pi hotspot, whichever can reach the booth, and then scan the invitation.
-4. One guest phone controls an active session. Other paired phones can watch the active session and review photos but cannot operate the controls or download those images. The controller can be replaced after 60 seconds without activity.
+4. One guest phone controls an active session. Other paired phones can watch and review previews but cannot operate the controls or download photos during capture. After the session completes, paired guests with its gallery link or QR can view and download its photos. The controller can be replaced after 60 seconds without activity.
 5. Guest access expires after 12 hours by default until event-based expiry is implemented.
 
 Photobox keeps guest and administrator access separate. Guest credentials are revocable and are not displayed in normal URLs. The planned browser credential is held in an HTTP-only cookie; on an HTTPS connection it is also marked secure.
+
+After a session completes, Photobox creates a vertical photo strip without altering the original photos and shows a session gallery link and QR. Only people who have paired with the booth can open it. The QR points to that one session and does not provide a session-list or event-wide gallery.
 
 ## If the setup PIN is lost
 

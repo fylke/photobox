@@ -96,6 +96,88 @@ def test_captured_photo_can_be_downloaded(tmp_path):
     assert "attachment" in response.headers["content-disposition"]
 
 
+def test_completed_session_gallery_is_scoped_and_includes_composition(tmp_path):
+    admin = paired_client(tmp_path)
+    guest = TestClient(admin.app)
+    invitation_url = admin.post("/api/pairing/invitations").json()["url"]
+    invitation = invitation_url.split("#/invite/", maxsplit=1)[1]
+    assert guest.post("/api/pairing/redeem", json={"invitation": invitation}).status_code == 200
+
+    session = admin.post("/api/sessions", json={"shots": 2, "countdown_seconds": 0}).json()
+    for _ in range(8):
+        response = admin.post(f"/api/sessions/{session['id']}/advance")
+        assert response.status_code == 200
+        session = response.json()
+
+    gallery = guest.get(f"/api/sessions/{session['id']}/gallery")
+
+    assert gallery.status_code == 200
+    result = gallery.json()
+    assert len(result["photos"]) == 2
+    assert result["strip_url"] == f"/api/sessions/{session['id']}/media/strip"
+    assert result["url"].endswith(f"#/gallery/{session['id']}")
+    assert result["qr_data_url"].startswith("data:image/png;base64,")
+    assert guest.get(result["strip_url"]).content.startswith(b"\xff\xd8")
+    assert guest.get(result["photos"][0]["url"]).status_code == 200
+    assert (
+        guest.get("/api/sessions/00000000-0000-0000-0000-000000000001/gallery").status_code == 404
+    )
+
+
+def test_strip_storage_failure_is_reported_without_completing_session(tmp_path, monkeypatch):
+    client = paired_client(tmp_path)
+    session = client.post("/api/sessions", json={"shots": 1, "countdown_seconds": 0}).json()
+    for _ in range(4):
+        response = client.post(f"/api/sessions/{session['id']}/advance")
+        assert response.status_code == 200
+        session = response.json()
+    assert session["state"] == "composing"
+
+    def fail_composition(_session_id, _photo_ids):
+        raise OSError("disk unavailable")
+
+    monkeypatch.setattr(
+        client.app.state.session_manager.storage,
+        "compose_strip",
+        fail_composition,
+    )
+    response = client.post(f"/api/sessions/{session['id']}/advance")
+
+    assert response.status_code == 503
+    assert "Could not compose the photo strip" in response.json()["detail"]
+    assert client.app.state.session_manager.current.state.value == "composing"
+
+
+def test_observer_cannot_download_active_session_photos(tmp_path):
+    admin = paired_client(tmp_path)
+    guest = TestClient(admin.app)
+    invitation_url = admin.post("/api/pairing/invitations").json()["url"]
+    invitation = invitation_url.split("#/invite/", maxsplit=1)[1]
+    guest.post("/api/pairing/redeem", json={"invitation": invitation})
+    session = admin.post("/api/sessions", json={"shots": 1, "countdown_seconds": 0}).json()
+    for _ in range(3):
+        session = admin.post(f"/api/sessions/{session['id']}/advance").json()
+    photo_id = session["photo_ids"][0]
+
+    assert guest.get(f"/api/sessions/{session['id']}/photos/{photo_id}").status_code == 403
+    assert (
+        guest.get(f"/api/sessions/{session['id']}/photos/{photo_id}?download=false").status_code
+        == 200
+    )
+
+
+def test_gallery_and_photo_routes_require_pairing(tmp_path):
+    client = TestClient(create_app(storage_dir=tmp_path))
+
+    assert (
+        client.get("/api/sessions/00000000-0000-0000-0000-000000000001/gallery").status_code == 401
+    )
+    assert (
+        client.get("/api/sessions/00000000-0000-0000-0000-000000000001/media/strip").status_code
+        == 401
+    )
+
+
 def test_missing_photo_returns_not_found(tmp_path):
     client = paired_client(tmp_path)
 
@@ -126,6 +208,8 @@ def test_screen_ui_is_served_from_root(tmp_path):
     assert "setInterval" in response.text
     assert "Live camera preview" in response.text
     assert "No camera connected" in response.text
+    assert "Session gallery" in response.text
+    assert "Copy gallery link" in response.text
     assert "decodeURIComponent(window.location.hash)" in response.text
 
 

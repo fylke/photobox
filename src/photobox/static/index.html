@@ -94,6 +94,8 @@
     .preview p { padding: 18px; color: var(--muted); text-align: center; }
     .downloads { display: flex; flex-wrap: wrap; gap: 8px 18px; min-height: 20px; }
     .downloads a { color: var(--green); font-size: 14px; font-weight: 700; }
+    .gallery-photos { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+    .gallery-photos img, #gallery-strip { width: 100%; height: auto; border-radius: 8px; }
     .guest-list { margin: 22px 0 0; padding: 0; list-style: none; }
     .guest-list li { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 14px; }
     .guest-list button { min-height: 36px; padding: 0 12px; background: var(--green); }
@@ -231,6 +233,24 @@
     </section>
   </main>
 
+  <main id="gallery-main" hidden>
+    <section class="session">
+      <p class="eyebrow">Session gallery</p>
+      <h1>Photo set</h1>
+      <p class="detail">This gallery is available to paired Photobox guests who have its link or QR.</p>
+      <label for="gallery-url">Gallery link</label>
+      <input id="gallery-url" type="url" readonly>
+      <button id="copy-gallery-link" class="secondary" type="button">Copy gallery link</button>
+      <p id="gallery-copy-status" class="detail" aria-live="polite"></p>
+      <img id="gallery-strip" alt="Composed photo strip" hidden>
+      <div id="gallery-photos" class="gallery-photos"></div>
+      <div id="gallery-qr-result" class="preview" hidden>
+        <img id="gallery-qr" alt="Session gallery QR code">
+      </div>
+      <button id="back-to-booth" class="secondary" type="button">Back to booth</button>
+    </section>
+  </main>
+
   <script>
     const form = document.querySelector("#session-form");
     const startButton = document.querySelector("#start-button");
@@ -246,6 +266,7 @@
     const settings = form.querySelectorAll("input");
     const pairingMain = document.querySelector("#pairing-main");
     const captureMain = document.querySelector("#capture-main");
+    const galleryMain = document.querySelector("#gallery-main");
     const pairingTitle = document.querySelector("#pairing-title");
     const pairingDescription = document.querySelector("#pairing-description");
     const claimForm = document.querySelector("#claim-form");
@@ -262,6 +283,12 @@
     const networkStatus = document.querySelector("#network-status");
     const venueNetworkForm = document.querySelector("#venue-network-form");
     const venueNetworkError = document.querySelector("#network-error");
+    const galleryPhotos = document.querySelector("#gallery-photos");
+    const galleryStrip = document.querySelector("#gallery-strip");
+    const galleryQr = document.querySelector("#gallery-qr");
+    const galleryQrResult = document.querySelector("#gallery-qr-result");
+    const galleryUrl = document.querySelector("#gallery-url");
+    const galleryCopyStatus = document.querySelector("#gallery-copy-status");
     let currentSession = null;
     let busy = false;
     let currentRole = null;
@@ -308,7 +335,32 @@
     function showCapture() {
       pairingMain.hidden = true;
       captureMain.hidden = false;
+      galleryMain.hidden = true;
       manageInvitations.hidden = currentRole !== "admin";
+    }
+
+    async function showGallery(sessionId) {
+      const gallery = await request(`/api/sessions/${sessionId}/gallery`);
+      pairingMain.hidden = true;
+      captureMain.hidden = true;
+      galleryMain.hidden = false;
+      galleryPhotos.replaceChildren();
+      gallery.photos.forEach((photo, index) => {
+        const link = document.createElement("a");
+        link.href = photo.url;
+        link.download = "";
+        const image = document.createElement("img");
+        image.src = photo.url + "?download=false";
+        image.alt = `Photo ${index + 1}`;
+        link.append(image);
+        galleryPhotos.append(link);
+      });
+      galleryStrip.hidden = !gallery.strip_url;
+      if (gallery.strip_url) galleryStrip.src = gallery.strip_url;
+      galleryQr.src = gallery.qr_data_url;
+      galleryUrl.value = gallery.url;
+      galleryQrResult.hidden = false;
+      window.history.replaceState(null, "", `/#/gallery/${sessionId}`);
     }
 
     async function loadNetworkStatus() {
@@ -482,6 +534,7 @@
           body: JSON.stringify(body)
         });
         await runFlow(session);
+        if (currentSession?.state === "done") await showGallery(currentSession.id);
       } catch (error) {
         busy = false;
         errorMessage.textContent = error.message;
@@ -494,12 +547,14 @@
       if (busy || !currentSession) return;
       if (currentSession.state !== "review") {
         await runFlow(currentSession);
+        if (currentSession?.state === "done") await showGallery(currentSession.id);
         return;
       }
       busy = true;
       continueButton.disabled = true;
       try {
         await runFlow(await advance());
+        if (currentSession?.state === "done") await showGallery(currentSession.id);
       } catch (error) {
         busy = false;
         errorMessage.textContent = error.message;
@@ -595,8 +650,31 @@
     });
 
     document.querySelector("#open-capture").addEventListener("click", async () => {
+      window.history.replaceState(null, "", window.location.pathname);
       showCapture();
       await loadCurrentSession();
+    });
+
+    document.querySelector("#back-to-booth").addEventListener("click", async () => {
+      window.history.replaceState(null, "", window.location.pathname);
+      if (currentRole === "admin") {
+        showPairing("admin");
+        await loadGuestCredentials();
+      } else {
+        showCapture();
+        await loadCurrentSession();
+      }
+    });
+
+    document.querySelector("#copy-gallery-link").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(galleryUrl.value);
+        galleryCopyStatus.textContent = "Gallery link copied.";
+      } catch {
+        galleryUrl.focus();
+        galleryUrl.select();
+        galleryCopyStatus.textContent = "Link selected. Copy it using your device's copy command.";
+      }
     });
 
     manageInvitations.addEventListener("click", async () => {
@@ -688,6 +766,11 @@
           await pairFromInviteFragment();
           const identity = await request("/api/pairing/me");
           currentRole = identity.role;
+          const galleryMatch = window.location.hash.match(/^#\/gallery\/([0-9a-f-]{36})$/i);
+          if (galleryMatch) {
+            await showGallery(galleryMatch[1]);
+            return;
+          }
           if (currentRole === "admin") {
             showPairing("admin");
             await loadGuestCredentials();

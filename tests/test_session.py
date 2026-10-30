@@ -74,7 +74,7 @@ class SessionManagerTests(unittest.TestCase):
 
     def test_failed_camera_retries_once_then_saves_recent_preview_as_low_quality(self) -> None:
         failing_camera = FailingCamera()
-        preview_frame = b"\xff\xd8preview-jpeg\xff\xd9"
+        preview_frame = next(MockCamera().iter_preview_frames())
         session = self.manager.start(
             shots=1,
             countdown_seconds=0,
