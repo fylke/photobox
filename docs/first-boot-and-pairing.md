@@ -79,7 +79,9 @@ The Pi does not need internet access for local photo capture and downloads. Inte
 
 Photobox keeps guest and administrator access separate. Guest credentials are revocable and are not displayed in normal URLs. The planned browser credential is held in an HTTP-only cookie; on an HTTPS connection it is also marked secure.
 
-After a session completes, Photobox creates a vertical photo strip without altering the original photos and shows a session gallery link and QR. Only people who have paired with the booth can open it. The QR points to that one session and does not provide a session-list or event-wide gallery.
+After a session completes, Photobox creates a vertical photo strip without altering the original photos and shows a session gallery link and QR. Only people who have paired with the booth can open it. The QR points to that one session and does not provide a session-list or event-wide gallery. For sessions with at least two photos, a paired guest can request an animated GIF from those still photos. GIF creation runs after the request and is limited to 8 frames, 4 frames per second, 640×640 pixels, and 10 MB; the gallery reports if encoding fails. This initial GIF is made from the captured stills, not from continuous live-preview frames.
+
+An operator may configure a local transparent PNG overlay for each strip photo slot by setting `PHOTOBOX_STRIP_OVERLAY` to its file path before starting Photobox. The current layout requires a 360x480 PNG with transparent pixels and a maximum file size of 5 MB. Photobox rejects invalid overlays at startup; there is no guest upload or frame editor.
 
 ## If the setup PIN is lost
 

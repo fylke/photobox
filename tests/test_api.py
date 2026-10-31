@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from photobox.api import create_app
-from photobox.camera import MockCamera, UnavailableCamera
+from photobox.camera import CapturedImage, MockCamera, UnavailableCamera
 from photobox.camera_registry import CameraRegistry
 from photobox.network import NetworkError, NetworkStatus
 from photobox.pairing import hash_setup_pin
@@ -124,6 +124,60 @@ def test_completed_session_gallery_is_scoped_and_includes_composition(tmp_path):
     )
 
 
+def test_guest_can_create_and_download_session_gif(tmp_path):
+    client = paired_client(tmp_path)
+    session_id = "00000000-0000-0000-0000-000000000123"
+    storage = client.app.state.session_manager.storage
+    colors = ([255, 0, 0], [0, 0, 255])
+    photo_ids = [
+        storage.save_photo(
+            session_id,
+            CapturedImage(
+                b"P6\n64 48\n255\n" + bytes(color) * (64 * 48),
+                "ppm",
+                "image/x-portable-pixmap",
+            ),
+        )
+        for color in colors
+    ]
+    storage.save_session(
+        {"id": session_id, "state": "done", "photo_ids": photo_ids, "shots_taken": 2}
+    )
+
+    response = client.post(f"/api/sessions/{session_id}/media/gif")
+
+    assert response.status_code == 202
+    assert response.json() == {"status": "processing"}
+    gallery = client.get(f"/api/sessions/{session_id}/gallery").json()
+    assert gallery["gif_status"] == "ready"
+    assert gallery["gif_url"] == f"/api/sessions/{session_id}/media/gif"
+    gif = client.get(gallery["gif_url"])
+    assert gif.status_code == 200
+    assert gif.headers["content-type"] == "image/gif"
+    assert gif.content.startswith(b"GIF")
+
+
+def test_gif_creation_reports_media_errors_in_gallery(tmp_path, monkeypatch):
+    client = paired_client(tmp_path)
+    session_id = "00000000-0000-0000-0000-000000000124"
+    storage = client.app.state.session_manager.storage
+    photo_ids = [storage.save_photo(session_id, MockCamera().capture_still()) for _ in range(2)]
+    storage.save_session(
+        {"id": session_id, "state": "done", "photo_ids": photo_ids, "shots_taken": 2}
+    )
+
+    def fail_gif(_session_id, _photo_ids):
+        raise ValueError("source image is corrupt")
+
+    monkeypatch.setattr(storage, "compose_gif", fail_gif)
+    response = client.post(f"/api/sessions/{session_id}/media/gif")
+
+    assert response.status_code == 202
+    gallery = client.get(f"/api/sessions/{session_id}/gallery").json()
+    assert gallery["gif_status"] == "failed"
+    assert gallery["gif_error"] == "source image is corrupt"
+
+
 def test_strip_storage_failure_is_reported_without_completing_session(tmp_path, monkeypatch):
     client = paired_client(tmp_path)
     session = client.post("/api/sessions", json={"shots": 1, "countdown_seconds": 0}).json()
@@ -174,6 +228,14 @@ def test_gallery_and_photo_routes_require_pairing(tmp_path):
     )
     assert (
         client.get("/api/sessions/00000000-0000-0000-0000-000000000001/media/strip").status_code
+        == 401
+    )
+    assert (
+        client.post("/api/sessions/00000000-0000-0000-0000-000000000001/media/gif").status_code
+        == 401
+    )
+    assert (
+        client.get("/api/sessions/00000000-0000-0000-0000-000000000001/media/gif").status_code
         == 401
     )
 

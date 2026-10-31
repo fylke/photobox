@@ -10,12 +10,20 @@ _STRIP_SLOT_SIZE = (360, 480)
 _STRIP_PADDING = 24
 _MAX_SOURCE_BYTES = 50_000_000
 _MAX_SOURCE_PIXELS = 20_000_000
+_MAX_GIF_FRAMES = 8
+_MAX_GIF_WIDTH = 640
+_MAX_GIF_HEIGHT = 640
+_GIF_FRAME_DURATION_MS = 250
+_MAX_GIF_BYTES = 10_000_000
 _ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "ppm"}
 
 
 class LocalStorage:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, strip_overlay_path: Path | None = None):
         self.root = root.expanduser()
+        self._strip_overlay = (
+            self._load_strip_overlay(strip_overlay_path) if strip_overlay_path is not None else None
+        )
 
     def save_photo(self, session_id: str, image: CapturedImage) -> str:
         normalized_id = self._normalize_uuid(session_id)
@@ -55,6 +63,13 @@ class LocalStorage:
         path = self._session_dir(normalized_id) / "strip.jpg"
         return path if path.is_file() else None
 
+    def animated_path(self, session_id: str) -> Path | None:
+        normalized_id = self._normalize_uuid(session_id)
+        if normalized_id is None:
+            return None
+        path = self._session_dir(normalized_id) / "photos.gif"
+        return path if path.is_file() else None
+
     def compose_strip(self, session_id: str, photo_ids: list[str]) -> Path:
         normalized_id = self._normalize_uuid(session_id)
         if normalized_id is None:
@@ -90,6 +105,10 @@ class LocalStorage:
                 raise ValueError(f"Original photo {photo_id!r} is not a valid image.") from error
             x = _STRIP_PADDING
             y = _STRIP_PADDING + index * (slot_height + _STRIP_PADDING)
+            if self._strip_overlay is not None:
+                slot = Image.alpha_composite(slot.convert("RGBA"), self._strip_overlay).convert(
+                    "RGB"
+                )
             output.paste(slot, (x, y))
 
         session_dir = self._session_dir(normalized_id)
@@ -111,6 +130,78 @@ class LocalStorage:
             },
         )
         return strip_path
+
+    def compose_gif(self, session_id: str, photo_ids: list[str]) -> Path:
+        normalized_id = self._normalize_uuid(session_id)
+        if normalized_id is None:
+            raise ValueError("Invalid session ID.")
+        if not 2 <= len(photo_ids) <= _MAX_GIF_FRAMES:
+            raise ValueError(
+                f"An animated GIF must contain between 2 and {_MAX_GIF_FRAMES} photos."
+            )
+
+        frames: list[Image.Image] = []
+        try:
+            for photo_id in photo_ids:
+                source_path = self.photo_path(normalized_id, photo_id)
+                if source_path is None:
+                    raise ValueError(f"Original photo {photo_id!r} is missing.")
+                if source_path.stat().st_size > _MAX_SOURCE_BYTES:
+                    raise ValueError(f"Original photo {photo_id!r} exceeds the size limit.")
+                with Image.open(source_path) as source:
+                    if source.width * source.height > _MAX_SOURCE_PIXELS:
+                        raise ValueError(f"Original photo {photo_id!r} exceeds the pixel limit.")
+                    frame = source.convert("RGB")
+                    frame.thumbnail(
+                        (_MAX_GIF_WIDTH, _MAX_GIF_HEIGHT),
+                        Image.Resampling.LANCZOS,
+                    )
+                    frames.append(frame)
+        except (OSError, Image.DecompressionBombError) as error:
+            for frame in frames:
+                frame.close()
+            raise ValueError(f"Original photo could not be encoded as a GIF: {error}") from error
+        except ValueError:
+            for frame in frames:
+                frame.close()
+            raise
+
+        session_dir = self._session_dir(normalized_id)
+        session_dir.mkdir(parents=True, exist_ok=True)
+        gif_path = session_dir / "photos.gif"
+        temporary_path = session_dir / "photos.gif.tmp"
+        try:
+            frames[0].save(
+                temporary_path,
+                format="GIF",
+                save_all=True,
+                append_images=frames[1:],
+                duration=_GIF_FRAME_DURATION_MS,
+                loop=0,
+                optimize=True,
+            )
+            if temporary_path.stat().st_size > _MAX_GIF_BYTES:
+                raise ValueError("Generated GIF exceeds the 10 MB size limit.")
+            temporary_path.replace(gif_path)
+        finally:
+            for frame in frames:
+                frame.close()
+            temporary_path.unlink(missing_ok=True)
+
+        self._write_media_metadata(
+            normalized_id,
+            {
+                "animation": {
+                    "type": "photo-sequence-gif",
+                    "file": gif_path.name,
+                    "frame_count": len(photo_ids),
+                    "frame_duration_ms": _GIF_FRAME_DURATION_MS,
+                    "max_width": _MAX_GIF_WIDTH,
+                    "photo_ids": list(photo_ids),
+                }
+            },
+        )
+        return gif_path
 
     def list_sessions(self) -> list[dict[str, object]]:
         sessions: list[dict[str, object]] = []
@@ -176,6 +267,12 @@ class LocalStorage:
             raise RuntimeError(f"Media metadata is corrupted: {metadata_path}") from error
         return metadata if isinstance(metadata, dict) else {}
 
+    def update_media_metadata(self, session_id: str, updates: dict[str, object]) -> None:
+        normalized_id = self._normalize_uuid(session_id)
+        if normalized_id is None:
+            raise ValueError("Invalid session ID.")
+        self._write_media_metadata(normalized_id, updates)
+
     def _read_low_quality_ids(self, session_id: str) -> list[str]:
         photo_ids = self.read_media_metadata(session_id).get("low_quality_photo_ids", [])
         return photo_ids if isinstance(photo_ids, list) else []
@@ -192,6 +289,30 @@ class LocalStorage:
 
     def _session_dir(self, session_id: str) -> Path:
         return self.root / "events" / "default" / session_id
+
+    @staticmethod
+    def _load_strip_overlay(path: Path) -> Image.Image:
+        path = path.expanduser()
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"Strip overlay must be a regular local file: {path}")
+        if path.stat().st_size > 5_000_000:
+            raise ValueError("Strip overlay exceeds the 5 MB size limit.")
+        try:
+            with Image.open(path) as source:
+                if source.format != "PNG":
+                    raise ValueError("Strip overlay must be a PNG image.")
+                if source.size != _STRIP_SLOT_SIZE:
+                    raise ValueError(
+                        f"Strip overlay must be {_STRIP_SLOT_SIZE[0]}x{_STRIP_SLOT_SIZE[1]} pixels."
+                    )
+                if source.mode not in {"RGBA", "LA"} and "transparency" not in source.info:
+                    raise ValueError("Strip overlay must include transparent pixels.")
+                overlay = source.convert("RGBA")
+                if overlay.getchannel("A").getextrema()[0] == 255:
+                    raise ValueError("Strip overlay must include transparent pixels.")
+                return overlay
+        except (OSError, Image.DecompressionBombError) as error:
+            raise ValueError(f"Strip overlay is not a valid PNG image: {path}") from error
 
     @staticmethod
     def _normalize_uuid(value: str) -> str | None:

@@ -8,7 +8,7 @@ from threading import Lock
 from urllib.parse import urlsplit
 
 import qrcode
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -60,6 +60,7 @@ def create_app(
     device_config_path: Path | None = None,
     network_manager: NetworkManager | None = None,
     camera_registry: CameraRegistry | None = None,
+    strip_overlay_path: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Photobox", version="0.1.0")
     if setup_pin_hash is not None and device_config_path is not None:
@@ -74,7 +75,7 @@ def create_app(
     if device_config is not None:
         setup_pin_hash = str(device_config["setup_pin_hash"])
     data_dir = storage_dir or Path(os.environ.get("PHOTOBOX_DATA_DIR", "~/photobox"))
-    storage = LocalStorage(data_dir)
+    storage = LocalStorage(data_dir, strip_overlay_path)
     manager = SessionManager(capture_camera, storage)
     pairing = PairingManager(storage.root / "pairing.sqlite3", setup_pin_hash)
     if network_manager is not None:
@@ -93,6 +94,8 @@ def create_app(
     app.state.camera_registry = registry
     screen_html = files("photobox").joinpath("static", "index.html").read_text(encoding="utf-8")
     controller_lock = Lock()
+    gif_lock = Lock()
+    gif_jobs: set[str] = set()
     controller_credential_id: str | None = None
     controller_last_active = 0.0
 
@@ -390,6 +393,8 @@ def create_app(
             raise HTTPException(status_code=404, detail="Gallery not found")
         photos = manager.storage.list_photos(session_id)
         strip_path = manager.storage.composed_path(session_id)
+        media = manager.storage.read_media_metadata(session_id)
+        animation_status = media.get("animation_status")
         gallery_url = f"{str(request.base_url).rstrip('/')}/#/gallery/{session_id}"
         qr_image = qrcode.make(gallery_url)
         qr_buffer = BytesIO()
@@ -409,9 +414,84 @@ def create_app(
             "strip_url": (
                 f"/api/sessions/{session_id}/media/strip" if strip_path is not None else None
             ),
+            "gif_status": (
+                "ready"
+                if manager.storage.animated_path(session_id) is not None
+                else (
+                    animation_status.get("status", "not_requested")
+                    if isinstance(animation_status, dict)
+                    else "not_requested"
+                )
+            ),
+            "gif_url": (
+                f"/api/sessions/{session_id}/media/gif"
+                if manager.storage.animated_path(session_id) is not None
+                else None
+            ),
+            "gif_error": (
+                animation_status.get("error")
+                if isinstance(animation_status, dict) and animation_status.get("status") == "failed"
+                else None
+            ),
             "url": gallery_url,
             "qr_data_url": qr_data_url,
         }
+
+    @app.post("/api/sessions/{session_id}/media/gif")
+    def create_session_gif(
+        session_id: str,
+        request: Request,
+        background_tasks: BackgroundTasks,
+    ) -> JSONResponse:
+        require_principal(request)
+        session = manager.storage.read_session(session_id)
+        if session is None or session.get("state") != "done":
+            raise HTTPException(status_code=404, detail="Completed session not found")
+        photo_ids = session.get("photo_ids")
+        if not isinstance(photo_ids, list) or not all(
+            isinstance(photo_id, str) for photo_id in photo_ids
+        ):
+            raise HTTPException(status_code=422, detail="Session has invalid photo metadata.")
+        if len(photo_ids) < 2:
+            raise HTTPException(
+                status_code=422,
+                detail="At least two captured photos are needed to create a GIF.",
+            )
+        if len(photo_ids) > 8:
+            raise HTTPException(status_code=422, detail="Session exceeds the GIF frame limit.")
+
+        with gif_lock:
+            if manager.storage.animated_path(session_id) is not None:
+                return JSONResponse(
+                    {"status": "ready", "url": f"/api/sessions/{session_id}/media/gif"}
+                )
+            if session_id in gif_jobs:
+                raise HTTPException(status_code=409, detail="GIF creation is already in progress.")
+            manager.storage.update_media_metadata(
+                session_id,
+                {"animation_status": {"status": "processing"}},
+            )
+            gif_jobs.add(session_id)
+
+        def encode_gif() -> None:
+            try:
+                manager.storage.compose_gif(session_id, photo_ids)
+            except (OSError, RuntimeError, ValueError) as error:
+                manager.storage.update_media_metadata(
+                    session_id,
+                    {"animation_status": {"status": "failed", "error": str(error)}},
+                )
+            else:
+                manager.storage.update_media_metadata(
+                    session_id,
+                    {"animation_status": {"status": "ready"}},
+                )
+            finally:
+                with gif_lock:
+                    gif_jobs.discard(session_id)
+
+        background_tasks.add_task(encode_gif)
+        return JSONResponse({"status": "processing"}, status_code=202)
 
     @app.get("/api/sessions/{session_id}/media/strip")
     def get_composed_strip(session_id: str, request: Request) -> FileResponse:
@@ -422,6 +502,15 @@ def create_app(
             raise HTTPException(status_code=404, detail="Composed strip not found")
         return FileResponse(path, filename=path.name, media_type="image/jpeg")
 
+    @app.get("/api/sessions/{session_id}/media/gif")
+    def get_animated_gif(session_id: str, request: Request) -> FileResponse:
+        require_principal(request)
+        session = manager.storage.read_session(session_id)
+        path = manager.storage.animated_path(session_id)
+        if session is None or path is None:
+            raise HTTPException(status_code=404, detail="Animated GIF not found")
+        return FileResponse(path, filename=path.name, media_type="image/gif")
+
     return app
 
 
@@ -431,6 +520,11 @@ app = create_app(
     device_config_path=(
         Path(os.environ["PHOTOBOX_DEVICE_CONFIG"])
         if os.environ.get("PHOTOBOX_DEVICE_CONFIG")
+        else None
+    ),
+    strip_overlay_path=(
+        Path(os.environ["PHOTOBOX_STRIP_OVERLAY"])
+        if os.environ.get("PHOTOBOX_STRIP_OVERLAY")
         else None
     ),
 )

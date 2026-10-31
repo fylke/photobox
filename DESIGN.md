@@ -239,6 +239,7 @@ A session has: a mode (`photo`, `strip`, `gif`), the number of shots, the countd
 
 - A **frame** (overlay/template) is a PNG with transparent areas or a layout (strip, grid) with slot definitions.
 - Applied to a set of photos on the server (`area:server`), producing a composed image next to the originals. Originals are never modified.
+- A locally supplied transparent PNG may be configured with `PHOTOBOX_STRIP_OVERLAY`. The current built-in vertical-strip layout applies it over each 360x480 photo slot; the daemon validates format, dimensions, transparency, and file size before use. Frame upload/editor UI remains deferred.
 - **Pre-applied frame:** if the preview source supports overlays (the UI can draw the frame over the preview; some DSLRs/webcams can't), the preview shows the frame so the guest can position themselves. This is a UI overlay only; actual composition still happens server-side. If the active display cannot overlay (e.g. no screen), the step is skipped.
 - Frames are managed (upload, select, set default) from the phone UI.
 

@@ -243,6 +243,9 @@
       <button id="copy-gallery-link" class="secondary" type="button">Copy gallery link</button>
       <p id="gallery-copy-status" class="detail" aria-live="polite"></p>
       <img id="gallery-strip" alt="Composed photo strip" hidden>
+      <button id="create-gallery-gif" class="secondary" type="button" hidden>Create animated GIF</button>
+      <p id="gallery-gif-status" class="detail" aria-live="polite"></p>
+      <a id="gallery-gif-link" hidden>Download animated GIF</a>
       <div id="gallery-photos" class="gallery-photos"></div>
       <div id="gallery-qr-result" class="preview" hidden>
         <img id="gallery-qr" alt="Session gallery QR code">
@@ -289,6 +292,10 @@
     const galleryQrResult = document.querySelector("#gallery-qr-result");
     const galleryUrl = document.querySelector("#gallery-url");
     const galleryCopyStatus = document.querySelector("#gallery-copy-status");
+    const galleryGifButton = document.querySelector("#create-gallery-gif");
+    const galleryGifStatus = document.querySelector("#gallery-gif-status");
+    const galleryGifLink = document.querySelector("#gallery-gif-link");
+    let gallerySessionId = null;
     let currentSession = null;
     let busy = false;
     let currentRole = null;
@@ -344,6 +351,7 @@
       pairingMain.hidden = true;
       captureMain.hidden = true;
       galleryMain.hidden = false;
+      gallerySessionId = sessionId;
       galleryPhotos.replaceChildren();
       gallery.photos.forEach((photo, index) => {
         const link = document.createElement("a");
@@ -360,6 +368,15 @@
       galleryQr.src = gallery.qr_data_url;
       galleryUrl.value = gallery.url;
       galleryQrResult.hidden = false;
+      galleryGifButton.hidden = gallery.photos.length < 2 || gallery.gif_status === "ready";
+      galleryGifButton.disabled = gallery.gif_status === "processing";
+      galleryGifStatus.textContent = gallery.gif_status === "processing"
+        ? "Creating GIF from the captured photos…"
+        : gallery.gif_status === "failed"
+          ? `GIF creation failed: ${gallery.gif_error || "Unknown media error."}`
+          : "";
+      galleryGifLink.hidden = !gallery.gif_url;
+      galleryGifLink.href = gallery.gif_url || "";
       window.history.replaceState(null, "", `/#/gallery/${sessionId}`);
     }
 
@@ -674,6 +691,27 @@
         galleryUrl.focus();
         galleryUrl.select();
         galleryCopyStatus.textContent = "Link selected. Copy it using your device's copy command.";
+      }
+    });
+
+    galleryGifButton.addEventListener("click", async () => {
+      if (!gallerySessionId) return;
+      galleryGifButton.disabled = true;
+      galleryGifStatus.textContent = "Creating GIF from the captured photos…";
+      try {
+        await request(`/api/sessions/${gallerySessionId}/media/gif`, { method: "POST" });
+        for (let attempt = 0; attempt < 30 && !galleryMain.hidden; attempt += 1) {
+          await wait(1000);
+          const gallery = await request(`/api/sessions/${gallerySessionId}/gallery`);
+          if (gallery.gif_status !== "processing") {
+            await showGallery(gallerySessionId);
+            return;
+          }
+        }
+        galleryGifStatus.textContent = "GIF creation is still in progress. Refresh the gallery shortly.";
+      } catch (error) {
+        galleryGifStatus.textContent = error.message;
+        galleryGifButton.disabled = false;
       }
     });
 

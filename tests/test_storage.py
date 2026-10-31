@@ -1,4 +1,5 @@
 import json
+from io import BytesIO
 from uuid import uuid4
 
 import pytest
@@ -60,6 +61,44 @@ def test_strip_composition_preserves_originals_and_records_slot_order(tmp_path):
     assert [photo["photo_id"] for photo in storage.list_photos(session_id)] == photo_ids
 
 
+def test_configured_transparent_overlay_is_applied_to_each_strip_slot(tmp_path):
+    overlay_path = tmp_path / "overlay.png"
+    overlay = Image.new("RGBA", (360, 480), (0, 0, 0, 0))
+    overlay.paste((0, 255, 0, 255), (0, 0, 12, 12))
+    overlay.save(overlay_path)
+    storage = LocalStorage(tmp_path / "photos", overlay_path)
+    session_id = str(uuid4())
+    photo_id = storage.save_photo(
+        session_id,
+        CapturedImage(
+            b"P6\n64 48\n255\n" + bytes([255, 0, 0]) * (64 * 48),
+            "ppm",
+            "image/x-portable-pixmap",
+        ),
+    )
+
+    strip_path = storage.compose_strip(session_id, [photo_id])
+
+    with Image.open(strip_path) as strip:
+        assert strip.getpixel((24 + 5, 24 + 5))[1] > 200
+        assert strip.getpixel((24 + 20, 24 + 20))[0] > 200
+
+
+@pytest.mark.parametrize(
+    ("size", "mode", "expected_error"),
+    [
+        ((32, 32), "RGBA", "must be 360x480"),
+        ((360, 480), "RGB", "must include transparent pixels"),
+    ],
+)
+def test_invalid_strip_overlay_is_rejected(tmp_path, size, mode, expected_error):
+    overlay_path = tmp_path / "invalid-overlay.png"
+    Image.new(mode, size, "red").save(overlay_path)
+
+    with pytest.raises(ValueError, match=expected_error):
+        LocalStorage(tmp_path / "photos", overlay_path)
+
+
 def test_storage_persists_low_quality_metadata_without_mutating_original(tmp_path):
     storage = LocalStorage(tmp_path)
     session_id = str(uuid4())
@@ -85,6 +124,66 @@ def test_strip_composition_rejects_corrupt_source_without_modifying_it(tmp_path)
 
     assert storage.photo_path(session_id, photo_id).read_bytes() == captured.data
     assert storage.composed_path(session_id) is None
+
+
+def test_gif_composition_is_bounded_and_preserves_originals(tmp_path):
+    storage = LocalStorage(tmp_path)
+    session_id = str(uuid4())
+    photo_ids = [
+        storage.save_photo(
+            session_id,
+            CapturedImage(
+                b"P6\n64 48\n255\n" + bytes(color) * (64 * 48),
+                "ppm",
+                "image/x-portable-pixmap",
+            ),
+        )
+        for color in ([255, 0, 0], [0, 0, 255])
+    ]
+    originals = [storage.photo_path(session_id, photo_id).read_bytes() for photo_id in photo_ids]
+
+    gif_path = storage.compose_gif(session_id, photo_ids)
+
+    with Image.open(gif_path) as animation:
+        assert animation.format == "GIF"
+        assert animation.size == (64, 48)
+        assert animation.n_frames == 2
+        assert animation.info["duration"] == 250
+    assert [
+        storage.photo_path(session_id, photo_id).read_bytes() for photo_id in photo_ids
+    ] == originals
+    assert storage.read_media_metadata(session_id)["animation"] == {
+        "type": "photo-sequence-gif",
+        "file": "photos.gif",
+        "frame_count": 2,
+        "frame_duration_ms": 250,
+        "max_width": 640,
+        "photo_ids": photo_ids,
+    }
+
+
+def test_gif_composition_resizes_large_frames(tmp_path):
+    storage = LocalStorage(tmp_path)
+    session_id = str(uuid4())
+    frame = Image.new("RGB", (1200, 600), "red")
+    frame_buffer = BytesIO()
+    frame.save(frame_buffer, format="PNG")
+    captured = CapturedImage(frame_buffer.getvalue(), "png", "image/png")
+    photo_ids = [
+        storage.save_photo(session_id, captured),
+        storage.save_photo(session_id, captured),
+    ]
+
+    gif_path = storage.compose_gif(session_id, photo_ids)
+
+    with Image.open(gif_path) as animation:
+        assert animation.size == (640, 320)
+
+
+@pytest.mark.parametrize("photo_ids", [[], ["bad"], [str(uuid4())] * 9])
+def test_gif_rejects_sets_outside_frame_limits(tmp_path, photo_ids):
+    with pytest.raises(ValueError, match="between 2 and 8"):
+        LocalStorage(tmp_path).compose_gif(str(uuid4()), photo_ids)
 
 
 @pytest.mark.parametrize("photo_ids", [[], ["bad"], [str(uuid4())] * 9])
