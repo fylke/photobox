@@ -166,6 +166,21 @@ class LocalStorage:
                 frame.close()
             raise
 
+        canvas_size = (
+            max(frame.width for frame in frames),
+            max(frame.height for frame in frames),
+        )
+        normalized_frames: list[Image.Image] = []
+        for frame in frames:
+            canvas = Image.new("RGB", canvas_size, "white")
+            canvas.paste(
+                frame,
+                ((canvas_size[0] - frame.width) // 2, (canvas_size[1] - frame.height) // 2),
+            )
+            normalized_frames.append(canvas)
+            frame.close()
+        frames = normalized_frames
+
         session_dir = self._session_dir(normalized_id)
         session_dir.mkdir(parents=True, exist_ok=True)
         gif_path = session_dir / "photos.gif"
@@ -197,6 +212,8 @@ class LocalStorage:
                     "frame_count": len(photo_ids),
                     "frame_duration_ms": _GIF_FRAME_DURATION_MS,
                     "max_width": _MAX_GIF_WIDTH,
+                    "width": canvas_size[0],
+                    "height": canvas_size[1],
                     "photo_ids": list(photo_ids),
                 }
             },

@@ -158,6 +158,8 @@ def test_gif_composition_is_bounded_and_preserves_originals(tmp_path):
         "frame_count": 2,
         "frame_duration_ms": 250,
         "max_width": 640,
+        "width": 64,
+        "height": 48,
         "photo_ids": photo_ids,
     }
 
@@ -178,6 +180,34 @@ def test_gif_composition_resizes_large_frames(tmp_path):
 
     with Image.open(gif_path) as animation:
         assert animation.size == (640, 320)
+
+
+def test_gif_composition_normalizes_mixed_frame_dimensions(tmp_path):
+    storage = LocalStorage(tmp_path)
+    session_id = str(uuid4())
+    photo_ids = []
+    for dimensions, color in [((640, 480), "red"), ((480, 640), "blue")]:
+        frame = Image.new("RGB", dimensions, color)
+        frame_buffer = BytesIO()
+        frame.save(frame_buffer, format="PNG")
+        photo_ids.append(
+            storage.save_photo(
+                session_id,
+                CapturedImage(frame_buffer.getvalue(), "png", "image/png"),
+            )
+        )
+
+    gif_path = storage.compose_gif(session_id, photo_ids)
+
+    with Image.open(gif_path) as animation:
+        assert animation.size == (640, 640)
+        assert animation.n_frames == 2
+        animation.seek(1)
+        assert animation.getpixel((0, 0)) == (255, 255, 255)
+        assert animation.getpixel((320, 320))[2] > 200
+    metadata = storage.read_media_metadata(session_id)["animation"]
+    assert metadata["width"] == 640
+    assert metadata["height"] == 640
 
 
 @pytest.mark.parametrize("photo_ids", [[], ["bad"], [str(uuid4())] * 9])
