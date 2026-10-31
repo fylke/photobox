@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+from collections import deque
 from dataclasses import dataclass
 from threading import Lock
 from typing import Literal
@@ -16,6 +17,8 @@ from photobox.camera import (
 
 CameraRole = Literal["preview", "capture"]
 _PREVIEW_FRAME_MAX_AGE_SECONDS = 10
+_GIF_PREVIEW_MAX_FRAMES = 8
+_GIF_PREVIEW_SAMPLE_SECONDS = 0.25
 
 
 @dataclass(frozen=True)
@@ -74,7 +77,8 @@ class CameraRegistry:
 
         self._bindings = dict(bindings or {})
         self._configuration_lock = Lock()
-        self._preview_frames: dict[str, tuple[float, bytes]] = {}
+        self._preview_frames: dict[str, deque[tuple[float, bytes]]] = {}
+        self._latest_preview_frames: dict[str, tuple[float, bytes]] = {}
         self._preview_lock = Lock()
         for client_id, camera_ids in self._bindings.items():
             if not client_id or not camera_ids:
@@ -161,18 +165,41 @@ class CameraRegistry:
             raise KeyError(f"Unknown camera ID: {camera_id}")
         if len(frame) > 5_000_000:
             raise ValueError("Preview frame exceeds the 5 MB limit.")
+        if not frame.startswith(b"\xff\xd8") or not frame.endswith(b"\xff\xd9"):
+            return
+        now = time.monotonic()
         with self._preview_lock:
-            self._preview_frames[camera_id] = (time.monotonic(), frame)
+            self._latest_preview_frames[camera_id] = (now, frame)
+            samples = self._preview_frames.setdefault(
+                camera_id,
+                deque(maxlen=_GIF_PREVIEW_MAX_FRAMES),
+            )
+            if samples and now - samples[-1][0] < _GIF_PREVIEW_SAMPLE_SECONDS:
+                return
+            samples.append((now, frame))
 
     def latest_preview_frame(self, client_id: str) -> bytes | None:
         camera = self.camera_for_role("preview", client_id)
         if camera is None:
             return None
         with self._preview_lock:
-            latest = self._preview_frames.get(camera.camera_id)
+            latest = self._latest_preview_frames.get(camera.camera_id)
         if latest is None or time.monotonic() - latest[0] > _PREVIEW_FRAME_MAX_AGE_SECONDS:
             return None
         return latest[1]
+
+    def recent_preview_frames(self, client_id: str) -> list[bytes]:
+        camera = self.camera_for_role("preview", client_id)
+        if camera is None:
+            return []
+        now = time.monotonic()
+        with self._preview_lock:
+            samples = self._preview_frames.get(camera.camera_id, ())
+            return [
+                frame
+                for timestamp, frame in samples
+                if now - timestamp <= _PREVIEW_FRAME_MAX_AGE_SECONDS
+            ]
 
 
 def camera_registry_from_environment() -> CameraRegistry:

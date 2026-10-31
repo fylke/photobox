@@ -233,10 +233,9 @@ A session has: a mode (`photo`, `strip`, `gif`), the number of shots, the countd
 
 ### 7.2 Animated GIFs (#10)
 
-- Frames come from the preview stream (or burst captures) of the selected camera.
-- Maximum length is configurable (`gif.max_seconds`, `gif.fps`, `gif.max_width`), enforced by the daemon regardless of what the client asks for.
-- Encoding uses ffmpeg/Pillow. Runs in the background to keep the booth responsive. An optional MP4/WebP output is offered when GIF size is too large.
-- Fallback: if the encoder is too slow (Pi 3), reduce resolution/fps automatically.
+- Frames come from the selected camera's preview stream when at least two recent samples are available; otherwise completed-session still photos are used. Timed still capture is a future fallback.
+- The current daemon caps animations at 8 frames, 4 frames per second, 640x640 pixels, and 10 MB. Preview history is held in a bounded in-memory ring buffer and expires after 10 seconds.
+- Encoding uses Pillow in a response background task to keep the request handler and still-capture path separate. Encoder and size failures are reported in the gallery.
 
 ### 7.3 Frames and composition (#3)
 

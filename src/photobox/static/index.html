@@ -245,6 +245,7 @@
       <img id="gallery-strip" alt="Composed photo strip" hidden>
       <button id="create-gallery-gif" class="secondary" type="button" hidden>Create animated GIF</button>
       <p id="gallery-gif-status" class="detail" aria-live="polite"></p>
+      <p class="detail">Uses recent live-preview frames when available; otherwise uses the captured photos.</p>
       <a id="gallery-gif-link" hidden>Download animated GIF</a>
       <div id="gallery-photos" class="gallery-photos"></div>
       <div id="gallery-qr-result" class="preview" hidden>
@@ -374,6 +375,8 @@
         ? "Creating GIF from the captured photos…"
         : gallery.gif_status === "failed"
           ? `GIF creation failed: ${gallery.gif_error || "Unknown media error."}`
+          : gallery.gif_status === "ready"
+            ? `GIF created from ${gallery.gif_source === "preview" ? "recent live-preview frames" : "captured photos"}.`
           : "";
       galleryGifLink.hidden = !gallery.gif_url;
       galleryGifLink.href = gallery.gif_url || "";

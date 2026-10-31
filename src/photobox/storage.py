@@ -1,4 +1,5 @@
 import json
+from io import BytesIO
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -33,7 +34,7 @@ class LocalStorage:
             raise ValueError("Unsupported captured image extension.")
         if len(image.data) > _MAX_SOURCE_BYTES:
             raise ValueError("Captured image exceeds the size limit.")
-        session_dir = self._session_dir(normalized_id)
+        session_dir = self._session_dir(session_id)
         session_dir.mkdir(parents=True, exist_ok=True)
         photo_id = str(uuid4())
         (session_dir / f"{photo_id}.{image.extension}").write_bytes(image.data)
@@ -166,6 +167,64 @@ class LocalStorage:
                 frame.close()
             raise
 
+        return self._write_gif(
+            normalized_id,
+            frames,
+            photo_ids,
+            source="session-photos",
+        )
+
+    def compose_gif_from_preview(self, session_id: str, preview_frames: list[bytes]) -> Path:
+        normalized_id = self._normalize_uuid(session_id)
+        if normalized_id is None:
+            raise ValueError("Invalid session ID.")
+        if not 2 <= len(preview_frames) <= _MAX_GIF_FRAMES:
+            raise ValueError(
+                f"An animated GIF must contain between 2 and {_MAX_GIF_FRAMES} preview frames."
+            )
+
+        frames: list[Image.Image] = []
+        try:
+            for frame_data in preview_frames:
+                if len(frame_data) > _MAX_SOURCE_BYTES:
+                    raise ValueError("Preview frame exceeds the GIF source size limit.")
+                if not frame_data.startswith(b"\xff\xd8") or not frame_data.endswith(b"\xff\xd9"):
+                    raise ValueError("Preview frame is not a valid JPEG.")
+                with Image.open(BytesIO(frame_data)) as source:
+                    if source.format != "JPEG":
+                        raise ValueError("Preview frame is not a valid JPEG.")
+                    if source.width * source.height > _MAX_SOURCE_PIXELS:
+                        raise ValueError("Preview frame exceeds the pixel limit.")
+                    frame = source.convert("RGB")
+                    frame.thumbnail(
+                        (_MAX_GIF_WIDTH, _MAX_GIF_HEIGHT),
+                        Image.Resampling.LANCZOS,
+                    )
+                    frames.append(frame)
+        except (OSError, Image.DecompressionBombError) as error:
+            for frame in frames:
+                frame.close()
+            raise ValueError(f"Preview frame could not be encoded as a GIF: {error}") from error
+        except ValueError:
+            for frame in frames:
+                frame.close()
+            raise
+
+        return self._write_gif(
+            normalized_id,
+            frames,
+            [],
+            source="preview",
+        )
+
+    def _write_gif(
+        self,
+        session_id: str,
+        frames: list[Image.Image],
+        photo_ids: list[str],
+        *,
+        source: str,
+    ) -> Path:
         canvas_size = (
             max(frame.width for frame in frames),
             max(frame.height for frame in frames),
@@ -181,7 +240,7 @@ class LocalStorage:
             frame.close()
         frames = normalized_frames
 
-        session_dir = self._session_dir(normalized_id)
+        session_dir = self._session_dir(session_id)
         session_dir.mkdir(parents=True, exist_ok=True)
         gif_path = session_dir / "photos.gif"
         temporary_path = session_dir / "photos.gif.tmp"
@@ -204,12 +263,13 @@ class LocalStorage:
             temporary_path.unlink(missing_ok=True)
 
         self._write_media_metadata(
-            normalized_id,
+            session_id,
             {
                 "animation": {
-                    "type": "photo-sequence-gif",
+                    "type": "animated-gif",
+                    "source": source,
                     "file": gif_path.name,
-                    "frame_count": len(photo_ids),
+                    "frame_count": len(frames),
                     "frame_duration_ms": _GIF_FRAME_DURATION_MS,
                     "max_width": _MAX_GIF_WIDTH,
                     "width": canvas_size[0],

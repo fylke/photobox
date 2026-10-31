@@ -167,6 +167,36 @@ def test_guest_can_create_and_download_session_gif(tmp_path):
     assert gif.content.startswith(b"GIF")
 
 
+def test_gif_prefers_recent_preview_frames_when_available(tmp_path, monkeypatch):
+    client = paired_client(tmp_path)
+    session_id = "00000000-0000-0000-0000-000000000125"
+    storage = client.app.state.session_manager.storage
+    captured = MockCamera().capture_still()
+    photo_ids = [
+        storage.save_photo(session_id, captured),
+        storage.save_photo(session_id, captured),
+    ]
+    storage.save_session(
+        {"id": session_id, "state": "done", "photo_ids": photo_ids, "shots_taken": 2}
+    )
+    clock = [100.0]
+    monkeypatch.setattr("photobox.camera_registry.time.monotonic", lambda: clock[0])
+    registry = client.app.state.camera_registry
+    for color in ("red", "blue"):
+        preview_frame = BytesIO()
+        Image.new("RGB", (80, 60), color).save(preview_frame, format="JPEG")
+        registry.record_preview_frame("mock-0", preview_frame.getvalue())
+        clock[0] += 0.25
+
+    response = client.post(f"/api/sessions/{session_id}/media/gif")
+
+    assert response.status_code == 202
+    animation = storage.read_media_metadata(session_id)["animation"]
+    assert animation["source"] == "preview"
+    assert animation["frame_count"] == 2
+    assert animation["photo_ids"] == []
+
+
 def test_gif_creation_reports_media_errors_in_gallery(tmp_path, monkeypatch):
     client = paired_client(tmp_path)
     session_id = "00000000-0000-0000-0000-000000000124"

@@ -111,6 +111,30 @@ def test_registry_only_returns_a_recent_preview_frame(monkeypatch):
     assert registry.latest_preview_frame("phone-a") is None
 
 
+def test_registry_samples_and_bounds_recent_preview_frames(monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr("photobox.camera_registry.time.monotonic", lambda: clock[0])
+    camera = IdentifiedCamera("webcam:preview")
+    registry = CameraRegistry([camera])
+    registry.record_preview_frame(camera.camera_id, b"\xff\xd8frame-one\xff\xd9")
+    clock[0] += 0.1
+    registry.record_preview_frame(camera.camera_id, b"\xff\xd8too-soon\xff\xd9")
+    for frame_number in range(2, 12):
+        clock[0] += 0.25
+        registry.record_preview_frame(
+            camera.camera_id,
+            b"\xff\xd8" + str(frame_number).encode("ascii") + b"\xff\xd9",
+        )
+
+    frames = registry.recent_preview_frames("phone-a")
+
+    assert len(frames) == 8
+    assert frames[0] == b"\xff\xd8" + b"4" + b"\xff\xd9"
+    assert frames[-1] == b"\xff\xd8" + b"11" + b"\xff\xd9"
+    clock[0] += 11
+    assert registry.recent_preview_frames("phone-a") == []
+
+
 def test_registry_rejects_duplicate_ids_and_invalid_bindings():
     first = IdentifiedCamera("camera:one")
     duplicate = IdentifiedCamera("camera:one")

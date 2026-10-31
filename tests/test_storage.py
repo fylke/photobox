@@ -153,7 +153,8 @@ def test_gif_composition_is_bounded_and_preserves_originals(tmp_path):
         storage.photo_path(session_id, photo_id).read_bytes() for photo_id in photo_ids
     ] == originals
     assert storage.read_media_metadata(session_id)["animation"] == {
-        "type": "photo-sequence-gif",
+        "type": "animated-gif",
+        "source": "session-photos",
         "file": "photos.gif",
         "frame_count": 2,
         "frame_duration_ms": 250,
@@ -180,6 +181,33 @@ def test_gif_composition_resizes_large_frames(tmp_path):
 
     with Image.open(gif_path) as animation:
         assert animation.size == (640, 320)
+
+
+def test_preview_gif_records_source_and_frame_count(tmp_path):
+    storage = LocalStorage(tmp_path)
+    session_id = str(uuid4())
+    frames = []
+    for color in ("red", "blue"):
+        frame_bytes = BytesIO()
+        Image.new("RGB", (80, 60), color).save(frame_bytes, format="JPEG")
+        frames.append(frame_bytes.getvalue())
+
+    gif_path = storage.compose_gif_from_preview(session_id, frames)
+
+    with Image.open(gif_path) as animation:
+        assert animation.n_frames == 2
+    metadata = storage.read_media_metadata(session_id)["animation"]
+    assert metadata["source"] == "preview"
+    assert metadata["frame_count"] == 2
+    assert metadata["photo_ids"] == []
+
+
+def test_preview_gif_rejects_non_jpeg_or_oversized_frame_sets(tmp_path):
+    storage = LocalStorage(tmp_path)
+    with pytest.raises(ValueError, match="between 2 and 8"):
+        storage.compose_gif_from_preview(str(uuid4()), [b"one"])
+    with pytest.raises(ValueError, match="not a valid JPEG"):
+        storage.compose_gif_from_preview(str(uuid4()), [b"not jpeg", b"not jpeg"])
 
 
 def test_gif_composition_normalizes_mixed_frame_dimensions(tmp_path):

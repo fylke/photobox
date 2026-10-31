@@ -520,6 +520,11 @@ def create_app(
                 if isinstance(animation_status, dict) and animation_status.get("status") == "failed"
                 else None
             ),
+            "gif_source": (
+                media["animation"].get("source")
+                if isinstance(media.get("animation"), dict)
+                else None
+            ),
             "url": gallery_url,
             "qr_data_url": qr_data_url,
         }
@@ -530,21 +535,22 @@ def create_app(
         request: Request,
         background_tasks: BackgroundTasks,
     ) -> JSONResponse:
-        require_principal(request)
+        principal = require_principal(request)
         session = manager.storage.read_session(session_id)
         if session is None or session.get("state") != "done":
             raise HTTPException(status_code=404, detail="Completed session not found")
+        preview_frames = registry.recent_preview_frames(principal.credential_id)
         photo_ids = session.get("photo_ids")
         if not isinstance(photo_ids, list) or not all(
             isinstance(photo_id, str) for photo_id in photo_ids
         ):
             raise HTTPException(status_code=422, detail="Session has invalid photo metadata.")
-        if len(photo_ids) < 2:
+        if len(preview_frames) < 2 and len(photo_ids) < 2:
             raise HTTPException(
                 status_code=422,
                 detail="At least two captured photos are needed to create a GIF.",
             )
-        if len(photo_ids) > 8:
+        if len(preview_frames) < 2 and len(photo_ids) > 8:
             raise HTTPException(status_code=422, detail="Session exceeds the GIF frame limit.")
 
         with gif_lock:
@@ -562,7 +568,10 @@ def create_app(
 
         def encode_gif() -> None:
             try:
-                manager.storage.compose_gif(session_id, photo_ids)
+                if len(preview_frames) >= 2:
+                    manager.storage.compose_gif_from_preview(session_id, preview_frames)
+                else:
+                    manager.storage.compose_gif(session_id, photo_ids)
             except (OSError, RuntimeError, ValueError) as error:
                 manager.storage.update_media_metadata(
                     session_id,
