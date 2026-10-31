@@ -34,6 +34,26 @@ class FallbackCamera(AlternateCamera):
         return "webcam-fallback"
 
 
+class RecoveringCamera(AlternateCamera):
+    def __init__(self) -> None:
+        self.capture_attempts = 0
+
+    def capture_still(self):
+        self.capture_attempts += 1
+        if self.capture_attempts <= 2:
+            raise RuntimeError("DSLR disconnected")
+        return super().capture_still()
+
+
+class CountingFallbackCamera(FallbackCamera):
+    def __init__(self) -> None:
+        self.capture_attempts = 0
+
+    def capture_still(self):
+        self.capture_attempts += 1
+        return super().capture_still()
+
+
 class SessionManagerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -138,6 +158,35 @@ class SessionManagerTests(unittest.TestCase):
                 self.storage_dir / "events" / "default" / session.id / f"{session.photo_ids[0]}.ppm"
             ).is_file()
         )
+
+    def test_preferred_camera_is_retried_between_shots_after_fallback(self) -> None:
+        primary_camera = RecoveringCamera()
+        fallback_camera = CountingFallbackCamera()
+
+        def camera_provider(failed_camera_ids):
+            if primary_camera.camera_id not in failed_camera_ids:
+                return primary_camera
+            if fallback_camera.camera_id not in failed_camera_ids:
+                return fallback_camera
+            return None
+
+        session = self.manager.start(
+            shots=2,
+            countdown_seconds=0,
+            camera=primary_camera,
+            fallback_camera_provider=camera_provider,
+        )
+
+        for _ in range(20):
+            if session.state is SessionState.DONE:
+                break
+            session = self.manager.advance(session.id)
+
+        self.assertEqual(session.state, SessionState.DONE)
+        self.assertEqual(primary_camera.capture_attempts, 3)
+        self.assertEqual(fallback_camera.capture_attempts, 1)
+        self.assertEqual(session.camera_id, primary_camera.camera_id)
+        self.assertFalse(session.camera_fallback)
 
 
 if __name__ == "__main__":

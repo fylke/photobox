@@ -67,6 +67,7 @@ class SessionManager:
             raise ValueError("countdown_seconds must be between 0 and 10")
 
         self._active_camera = camera or self.camera
+        self._preferred_camera = self._active_camera
         self._preview_frame_provider = preview_frame_provider
         self._fallback_camera_provider = fallback_camera_provider
         self._failed_camera_ids: set[str] = set()
@@ -116,11 +117,30 @@ class SessionManager:
         return session
 
     def _capture_with_fallback(self, session: CaptureSession) -> CapturedImage:
+        self._failed_camera_ids.clear()
+        if (
+            self._active_camera.camera_id != self._preferred_camera.camera_id
+            and self._fallback_camera_provider is not None
+        ):
+            recovered_camera = self._fallback_camera_provider(set())
+            if recovered_camera is not None:
+                self._active_camera = recovered_camera
+
         try:
-            return self._active_camera.capture_still()
+            captured = self._active_camera.capture_still()
+            session.camera_id = self._active_camera.camera_id
+            session.camera_fallback = (
+                self._active_camera.camera_id != self._preferred_camera.camera_id
+            )
+            return captured
         except RuntimeError as first_error:
             try:
-                return self._active_camera.capture_still()
+                captured = self._active_camera.capture_still()
+                session.camera_id = self._active_camera.camera_id
+                session.camera_fallback = (
+                    self._active_camera.camera_id != self._preferred_camera.camera_id
+                )
+                return captured
             except RuntimeError as retry_error:
                 self._failed_camera_ids.add(self._active_camera.camera_id)
                 fallback_error = retry_error
@@ -136,7 +156,9 @@ class SessionManager:
                         continue
                     self._active_camera = fallback_camera
                     session.camera_id = fallback_camera.camera_id
-                    session.camera_fallback = True
+                    session.camera_fallback = (
+                        fallback_camera.camera_id != self._preferred_camera.camera_id
+                    )
                     return captured
                 frame = (
                     self._preview_frame_provider()
