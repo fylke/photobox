@@ -123,6 +123,8 @@ def create_app(
     app.state.pairing_manager = pairing
     app.state.device_config = device_config
     app.state.camera_registry = registry
+    app.router.on_startup.append(registry.start_monitor)
+    app.router.on_shutdown.append(registry.stop_monitor)
     screen_html = files("photobox").joinpath("static", "index.html").read_text(encoding="utf-8")
     controller_lock = Lock()
     gif_lock = Lock()
@@ -294,7 +296,8 @@ def create_app(
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
-        return {"status": "ok", "camera": manager.camera.camera_id}
+        capture_camera = registry.camera_for_role("capture") or UnavailableCamera()
+        return {"status": "ok", "camera": capture_camera.camera_id}
 
     @app.get("/api/cameras")
     def camera_status() -> list[dict[str, object]]:

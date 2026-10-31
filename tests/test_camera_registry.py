@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from photobox.camera import CameraCapabilities, MockCamera
@@ -67,6 +69,37 @@ def test_registry_skips_unavailable_camera_for_role_selection():
     assert registry.camera_for_role("preview") is available
     assert registry.camera_for_role("preview", available_only=False) is unavailable
     assert registry.descriptors()[0].available is False
+
+
+def test_registry_refreshes_cached_availability():
+    camera = IdentifiedCamera("webcam:hotplug", available=False)
+    registry = CameraRegistry([camera])
+
+    camera._available = True
+    assert registry.descriptors()[0].available is False
+    assert registry.camera_for_role("capture") is None
+
+    assert registry.refresh_availability() == {camera.camera_id: True}
+    assert registry.descriptors()[0].available is True
+    assert registry.camera_for_role("capture") is camera
+
+
+def test_registry_monitor_refreshes_availability_in_background(monkeypatch):
+    monkeypatch.setattr("photobox.camera_registry._CAMERA_AVAILABILITY_POLL_SECONDS", 0.01)
+    camera = IdentifiedCamera("webcam:hotplug", available=False)
+    registry = CameraRegistry([camera])
+    camera._available = True
+
+    registry.start_monitor()
+    try:
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline:
+            if registry.descriptors()[0].available:
+                break
+            time.sleep(0.01)
+        assert registry.descriptors()[0].available is True
+    finally:
+        registry.stop_monitor()
 
 
 def test_registry_can_select_an_alternate_role_camera_excluding_failed_ids():
@@ -191,5 +224,6 @@ def test_gphoto2_registry_uses_webcam_capture_fallback(
 
     registry = camera_registry_from_environment()
 
+    registry.refresh_availability()
     assert registry.camera_for_role("capture").camera_id == expected_capture_id
     assert registry.camera_for_role("preview").camera_id == "v4l2:/dev/video9"

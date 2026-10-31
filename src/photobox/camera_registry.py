@@ -4,7 +4,7 @@ import os
 import time
 from collections import deque
 from dataclasses import dataclass
-from threading import Lock
+from threading import Event, Lock, Thread
 from typing import Literal
 
 from photobox.camera import (
@@ -19,6 +19,7 @@ CameraRole = Literal["preview", "capture"]
 _PREVIEW_FRAME_MAX_AGE_SECONDS = 10
 _GIF_PREVIEW_MAX_FRAMES = 8
 _GIF_PREVIEW_SAMPLE_SECONDS = 0.25
+_CAMERA_AVAILABILITY_POLL_SECONDS = 5
 
 
 @dataclass(frozen=True)
@@ -49,12 +50,22 @@ class CameraRegistry:
         cameras: list[Camera],
         roles: dict[str, set[CameraRole]] | None = None,
         bindings: dict[str, tuple[str, ...]] | None = None,
+        *,
+        initial_availability: dict[str, bool] | None = None,
     ):
         self._cameras: dict[str, Camera] = {}
         for camera in cameras:
             if not camera.camera_id or camera.camera_id in self._cameras:
                 raise ValueError(f"Camera IDs must be non-empty and unique: {camera.camera_id!r}")
             self._cameras[camera.camera_id] = camera
+
+        self._availability_lock = Lock()
+        self._availability = initial_availability or {
+            camera_id: camera.available for camera_id, camera in self._cameras.items()
+        }
+        self._monitor_lock = Lock()
+        self._monitor_stop = Event()
+        self._monitor_thread: Thread | None = None
 
         if roles is None:
             first_camera_id = next(iter(self._cameras), None)
@@ -92,10 +103,12 @@ class CameraRegistry:
     def descriptors(self) -> list[CameraDescriptor]:
         with self._configuration_lock:
             roles = {camera_id: set(value) for camera_id, value in self._roles.items()}
+        with self._availability_lock:
+            availability = self._availability.copy()
         return [
             CameraDescriptor(
                 camera_id=camera_id,
-                available=camera.available,
+                available=availability[camera_id],
                 roles=tuple(role for role in ("preview", "capture") if role in roles[camera_id]),
                 capabilities=camera.capabilities(),
             )
@@ -125,7 +138,7 @@ class CameraRegistry:
                         if role == "preview"
                         else self._cameras[camera_id].capabilities().still_capture
                     )
-                    and (not available_only or self._cameras[camera_id].available)
+                    and (not available_only or self._camera_available(camera_id))
                 ),
                 None,
             )
@@ -158,7 +171,14 @@ class CameraRegistry:
         roles: dict[str, set[CameraRole]],
         bindings: dict[str, tuple[str, ...]],
     ) -> CameraRegistry:
-        return CameraRegistry(list(self._cameras.values()), roles, bindings)
+        with self._availability_lock:
+            availability = self._availability.copy()
+        return CameraRegistry(
+            list(self._cameras.values()),
+            roles,
+            bindings,
+            initial_availability=availability,
+        )
 
     def record_preview_frame(self, camera_id: str, frame: bytes) -> None:
         if camera_id not in self._cameras:
@@ -177,6 +197,45 @@ class CameraRegistry:
             if samples and now - samples[-1][0] < _GIF_PREVIEW_SAMPLE_SECONDS:
                 return
             samples.append((now, frame))
+
+    def refresh_availability(self) -> dict[str, bool]:
+        current = {camera_id: camera.available for camera_id, camera in self._cameras.items()}
+        with self._availability_lock:
+            self._availability = current
+        return current.copy()
+
+    def start_monitor(self) -> None:
+        with self._monitor_lock:
+            if self._monitor_thread is not None and self._monitor_thread.is_alive():
+                return
+            self._monitor_stop.clear()
+            self._monitor_thread = Thread(
+                target=self._monitor_availability,
+                name="photobox-camera-monitor",
+                daemon=True,
+            )
+            self._monitor_thread.start()
+
+    def stop_monitor(self) -> None:
+        with self._monitor_lock:
+            thread = self._monitor_thread
+            if thread is None:
+                return
+            self._monitor_stop.set()
+        thread.join(timeout=_CAMERA_AVAILABILITY_POLL_SECONDS + 1)
+        with self._monitor_lock:
+            if self._monitor_thread is thread and not thread.is_alive():
+                self._monitor_thread = None
+
+    def _camera_available(self, camera_id: str) -> bool:
+        with self._availability_lock:
+            return self._availability[camera_id]
+
+    def _monitor_availability(self) -> None:
+        while True:
+            self.refresh_availability()
+            if self._monitor_stop.wait(_CAMERA_AVAILABILITY_POLL_SECONDS):
+                return
 
     def latest_preview_frame(self, client_id: str) -> bytes | None:
         camera = self.camera_for_role("preview", client_id)
@@ -204,7 +263,8 @@ class CameraRegistry:
 
 def camera_registry_from_environment() -> CameraRegistry:
     if os.environ.get("PHOTOBOX_CAMERA", "webcam").lower() != "gphoto2":
-        return CameraRegistry([camera_from_environment()])
+        camera = camera_from_environment()
+        return CameraRegistry([camera], initial_availability={camera.camera_id: False})
 
     device = os.environ.get("PHOTOBOX_CAMERA_DEVICE", "/dev/video0")
     port = os.environ.get("PHOTOBOX_GPHOTO2_PORT")
@@ -215,5 +275,9 @@ def camera_registry_from_environment() -> CameraRegistry:
         roles={
             dslr.camera_id: {"capture"},
             webcam.camera_id: {"preview", "capture"},
+        },
+        initial_availability={
+            dslr.camera_id: False,
+            webcam.camera_id: False,
         },
     )

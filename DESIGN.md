@@ -68,7 +68,7 @@ Rationale:
 
 ## 4. Hardware Profiles
 
-The booth detects what is present at startup and on hot-plug, and runs in the best available profile. Profiles are not hard-coded modes.
+The booth detects what is present at startup and on hot-plug, and runs in the best available profile. Profiles are not hard-coded modes. Environment-configured cameras are probed by a background monitor, which refreshes cached availability every five seconds so camera status and selection requests do not synchronously wait for `gphoto2`. Availability may initially report false until the first scan finishes; failed captures still trigger the session's immediate camera failover.
 
 | Profile | Camera | Screen | Extras | Behaviour |
 |---------|--------|--------|--------|-----------|
