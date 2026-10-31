@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import time
 from dataclasses import dataclass
@@ -71,6 +73,7 @@ class CameraRegistry:
             }
 
         self._bindings = dict(bindings or {})
+        self._configuration_lock = Lock()
         self._preview_frames: dict[str, tuple[float, bytes]] = {}
         self._preview_lock = Lock()
         for client_id, camera_ids in self._bindings.items():
@@ -83,13 +86,13 @@ class CameraRegistry:
                 raise ValueError(f"Camera binding for {client_id!r} references an invalid camera.")
 
     def descriptors(self) -> list[CameraDescriptor]:
+        with self._configuration_lock:
+            roles = {camera_id: set(value) for camera_id, value in self._roles.items()}
         return [
             CameraDescriptor(
                 camera_id=camera_id,
                 available=camera.available,
-                roles=tuple(
-                    role for role in ("preview", "capture") if role in self._roles[camera_id]
-                ),
+                roles=tuple(role for role in ("preview", "capture") if role in roles[camera_id]),
                 capabilities=camera.capabilities(),
             )
             for camera_id, camera in self._cameras.items()
@@ -102,25 +105,53 @@ class CameraRegistry:
         *,
         available_only: bool = True,
     ) -> Camera | None:
-        bound_ids = self._bindings.get(client_id) if client_id is not None else None
-        candidates = bound_ids if bound_ids is not None else tuple(self._cameras)
-        return next(
-            (
-                self._cameras[camera_id]
-                for camera_id in candidates
-                if role in self._roles[camera_id]
-                and (
-                    self._cameras[camera_id].capabilities().preview
-                    if role == "preview"
-                    else self._cameras[camera_id].capabilities().still_capture
-                )
-                and (not available_only or self._cameras[camera_id].available)
-            ),
-            None,
-        )
+        with self._configuration_lock:
+            bound_ids = self._bindings.get(client_id) if client_id is not None else None
+            candidates = bound_ids if bound_ids is not None else tuple(self._cameras)
+            return next(
+                (
+                    self._cameras[camera_id]
+                    for camera_id in candidates
+                    if role in self._roles[camera_id]
+                    and (
+                        self._cameras[camera_id].capabilities().preview
+                        if role == "preview"
+                        else self._cameras[camera_id].capabilities().still_capture
+                    )
+                    and (not available_only or self._cameras[camera_id].available)
+                ),
+                None,
+            )
 
     def bound_camera_ids(self, client_id: str) -> tuple[str, ...]:
-        return self._bindings.get(client_id, tuple(self._cameras))
+        with self._configuration_lock:
+            return self._bindings.get(client_id, tuple(self._cameras))
+
+    def configuration(self) -> dict[str, dict[str, list[str]]]:
+        with self._configuration_lock:
+            return {
+                "roles": {camera_id: sorted(roles) for camera_id, roles in self._roles.items()},
+                "bindings": {
+                    client_id: list(camera_ids) for client_id, camera_ids in self._bindings.items()
+                },
+            }
+
+    def configure(
+        self,
+        roles: dict[str, set[CameraRole]],
+        bindings: dict[str, tuple[str, ...]],
+    ) -> None:
+        candidate = self.with_configuration(roles, bindings)
+        with self._configuration_lock:
+            self._roles = candidate._roles
+            self._bindings = candidate._bindings
+
+    def with_configuration(
+        self,
+        roles: dict[str, set[CameraRole]],
+        bindings: dict[str, tuple[str, ...]],
+    ) -> CameraRegistry:
+        return CameraRegistry(list(self._cameras.values()), roles, bindings)
 
     def record_preview_frame(self, camera_id: str, frame: bytes) -> None:
         if camera_id not in self._cameras:

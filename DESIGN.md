@@ -131,6 +131,7 @@ The system supports N cameras. Screens (and phone clients) are **bound** to one 
 - A binding maps `screen → [camera ids]`. A screen bound to several cameras shows a grid or switchable view.
 - A booth session names a **capture camera set**. Defaults to all cameras bound to the screen that started the session.
 - If a bound camera is missing, the screen shows the remaining cameras and a warning. If none are available, it falls back to the status screen (section 6.4).
+- The initial daemon persists camera role assignments and per-client camera ID bindings in `camera.json` under its data directory. Administrators read or update this configuration through `/api/cameras/config`; unknown camera IDs are rejected. Current bindings are camera-selection preferences for paired clients, not screen registrations or multi-camera layouts.
 
 ### 5.4 Camera fallbacks
 

@@ -36,18 +36,28 @@ class FakeNetworkManager:
         return NetworkStatus(True, "venue", "Connected to venue Wi-Fi.", "192.168.1.25")
 
 
-def paired_client(tmp_path, camera=None, network_manager=None):
+def paired_client(tmp_path, camera=None, network_manager=None, camera_registry=None):
     client = TestClient(
         create_app(
             camera=camera,
             storage_dir=tmp_path,
             setup_pin_hash=hash_setup_pin(SETUP_PIN),
             network_manager=network_manager,
+            camera_registry=camera_registry,
         )
     )
     response = client.post("/api/pairing/claim", json={"pin": SETUP_PIN})
     assert response.status_code == 200
     return client
+
+
+class ConfigurableMockCamera(MockCamera):
+    def __init__(self, camera_id):
+        self._camera_id = camera_id
+
+    @property
+    def camera_id(self):
+        return self._camera_id
 
 
 def test_mock_session_api_captures_and_persists(tmp_path):
@@ -362,6 +372,66 @@ def test_no_camera_keeps_status_available_and_rejects_capture_and_preview(tmp_pa
     assert client.post("/api/sessions", json={"shots": 1}).status_code == 503
     assert client.get("/api/preview").status_code == 503
     assert client.get("/api/pairing/status").json()["claimed"] is True
+
+
+def test_admin_camera_configuration_persists_roles_and_client_bindings(tmp_path):
+    preview = ConfigurableMockCamera("preview-camera")
+    capture = ConfigurableMockCamera("capture-camera")
+    registry = CameraRegistry([preview, capture])
+    client = TestClient(
+        create_app(
+            storage_dir=tmp_path,
+            setup_pin_hash=hash_setup_pin(SETUP_PIN),
+            camera_registry=registry,
+        )
+    )
+    assert client.post("/api/pairing/claim", json={"pin": SETUP_PIN}).status_code == 200
+    credential_id = client.get("/api/pairing/me").json()["credential_id"]
+    assert client.get("/api/cameras/config").status_code == 200
+    payload = {
+        "roles": {
+            "preview-camera": ["preview"],
+            "capture-camera": ["capture"],
+        },
+        "bindings": {credential_id: ["capture-camera", "preview-camera"]},
+    }
+
+    response = client.put("/api/cameras/config", json=payload)
+
+    assert response.status_code == 200
+    assert response.json() == payload
+    assert registry.camera_for_role("preview", credential_id) is preview
+    assert registry.camera_for_role("capture", credential_id) is capture
+    assert (tmp_path / "camera.json").is_file()
+
+    restarted_registry = CameraRegistry(
+        [ConfigurableMockCamera("preview-camera"), ConfigurableMockCamera("capture-camera")]
+    )
+    restarted = create_app(storage_dir=tmp_path, camera_registry=restarted_registry)
+
+    assert restarted.state.camera_registry is restarted_registry
+    assert restarted_registry.configuration() == payload
+    assert (
+        restarted_registry.camera_for_role("capture", credential_id).camera_id == "capture-camera"
+    )
+
+
+def test_camera_configuration_requires_admin_and_rejects_unknown_cameras(tmp_path):
+    registry = CameraRegistry([MockCamera()])
+    admin = paired_client(tmp_path, camera_registry=registry)
+    guest = TestClient(admin.app)
+    payload = {
+        "roles": {"unknown-camera": ["capture"]},
+        "bindings": {},
+    }
+
+    assert guest.put("/api/cameras/config", json=payload).status_code == 401
+    assert guest.get("/api/cameras/config").status_code == 401
+    response = admin.put("/api/cameras/config", json=payload)
+
+    assert response.status_code == 422
+    assert not (tmp_path / "camera.json").exists()
+    assert registry.configuration()["roles"]["mock-0"] == ["capture", "preview"]
 
 
 def test_only_admin_can_configure_venue_wifi(tmp_path):

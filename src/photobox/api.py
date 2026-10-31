@@ -1,10 +1,12 @@
 import base64
+import json
 import os
 import time
 from importlib.resources import files
 from io import BytesIO
 from pathlib import Path
 from threading import Lock
+from typing import Literal
 from urllib.parse import urlsplit
 
 import qrcode
@@ -53,6 +55,11 @@ class ConfigureVenueRequest(BaseModel):
     password: str = Field(min_length=8, max_length=64)
 
 
+class ConfigureCamerasRequest(BaseModel):
+    roles: dict[str, list[Literal["preview", "capture"]]]
+    bindings: dict[str, list[str]]
+
+
 def create_app(
     camera: Camera | None = None,
     storage_dir: Path | None = None,
@@ -68,14 +75,38 @@ def create_app(
     if camera is not None and camera_registry is not None:
         raise ValueError("Choose either camera or camera_registry, not both")
     registry = camera_registry or CameraRegistry([camera if camera is not None else MockCamera()])
-    capture_camera = (
-        registry.camera_for_role("capture", available_only=False) or UnavailableCamera()
-    )
     device_config = load_device_config(device_config_path) if device_config_path else None
     if device_config is not None:
         setup_pin_hash = str(device_config["setup_pin_hash"])
     data_dir = storage_dir or Path(os.environ.get("PHOTOBOX_DATA_DIR", "~/photobox"))
     storage = LocalStorage(data_dir, strip_overlay_path)
+    camera_config_path = storage.root / "camera.json"
+    if camera_config_path.is_symlink():
+        raise RuntimeError("Camera configuration must not be a symlink.")
+    if camera_config_path.exists():
+        try:
+            camera_config = json.loads(camera_config_path.read_text(encoding="utf-8"))
+            if not isinstance(camera_config, dict):
+                raise TypeError("Camera configuration must be an object.")
+            registry.configure(
+                {camera_id: set(roles) for camera_id, roles in camera_config["roles"].items()},
+                {
+                    client_id: tuple(camera_ids)
+                    for client_id, camera_ids in camera_config["bindings"].items()
+                },
+            )
+        except (
+            OSError,
+            AttributeError,
+            KeyError,
+            TypeError,
+            ValueError,
+            json.JSONDecodeError,
+        ) as error:
+            raise RuntimeError(f"Could not load camera configuration: {error}") from error
+    capture_camera = (
+        registry.camera_for_role("capture", available_only=False) or UnavailableCamera()
+    )
     manager = SessionManager(capture_camera, storage)
     pairing = PairingManager(storage.root / "pairing.sqlite3", setup_pin_hash)
     if network_manager is not None:
@@ -95,6 +126,7 @@ def create_app(
     screen_html = files("photobox").joinpath("static", "index.html").read_text(encoding="utf-8")
     controller_lock = Lock()
     gif_lock = Lock()
+    camera_config_lock = Lock()
     gif_jobs: set[str] = set()
     controller_credential_id: str | None = None
     controller_last_active = 0.0
@@ -267,6 +299,56 @@ def create_app(
     @app.get("/api/cameras")
     def camera_status() -> list[dict[str, object]]:
         return [descriptor.as_dict() for descriptor in registry.descriptors()]
+
+    @app.get("/api/cameras/config")
+    def get_camera_configuration(request: Request) -> dict[str, dict[str, list[str]]]:
+        require_admin(request)
+        return registry.configuration()
+
+    @app.put("/api/cameras/config")
+    def configure_cameras(
+        payload: ConfigureCamerasRequest,
+        request: Request,
+    ) -> dict[str, dict[str, list[str]]]:
+        validate_origin(request)
+        require_admin(request)
+        with camera_config_lock:
+            try:
+                candidate = registry.with_configuration(
+                    {camera_id: set(roles) for camera_id, roles in payload.roles.items()},
+                    {
+                        client_id: tuple(camera_ids)
+                        for client_id, camera_ids in payload.bindings.items()
+                    },
+                )
+            except ValueError as error:
+                raise HTTPException(status_code=422, detail=str(error)) from error
+            configuration = candidate.configuration()
+            temporary_path = camera_config_path.with_suffix(".json.tmp")
+            try:
+                camera_config_path.parent.mkdir(parents=True, exist_ok=True)
+                temporary_path.write_text(
+                    json.dumps(configuration, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                temporary_path.replace(camera_config_path)
+            except OSError as error:
+                temporary_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Could not persist camera configuration: {error}",
+                ) from error
+            registry.configure(
+                {camera_id: set(roles) for camera_id, roles in payload.roles.items()},
+                {
+                    client_id: tuple(camera_ids)
+                    for client_id, camera_ids in payload.bindings.items()
+                },
+            )
+            manager.camera = (
+                registry.camera_for_role("capture", available_only=False) or UnavailableCamera()
+            )
+            return configuration
 
     @app.get("/api/preview")
     def preview(request: Request) -> StreamingResponse:
