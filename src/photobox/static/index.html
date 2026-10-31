@@ -451,6 +451,9 @@
           : state
             ? "Keep your pose; the session is in progress."
             : "Set up a session when you are ready.";
+      if (session?.camera_fallback) {
+        stateDetail.textContent += ` The primary camera is unavailable; using ${session.camera_id}.`;
+      }
       startButton.hidden = Boolean(state && state !== "done");
       continueButton.hidden = !activeSession || !isController;
       continueButton.textContent = state === "capturing" ? "Take photo" : "Continue";

@@ -143,6 +143,8 @@ The system supports N cameras. Screens (and phone clients) are **bound** to one 
 | DSLR capture fails | Retry once, then use the latest preview frame; flag the photo as "low quality" in metadata |
 | No camera at all | Booth reports "no camera" on all clients, stays up for setup (#7) |
 
+During an active capture, the daemon retries the selected camera once, then tries another available camera assigned the `capture` role for that paired client. The saved session camera ID changes to the camera that actually captured the photo. If alternate capture fails, the latest valid preview frame remains the low-quality fallback. Background device rediscovery and automatic switching back to a recovered DSLR are not yet implemented.
+
 ## 6. Display and Preview
 
 ### 6.1 Local screen

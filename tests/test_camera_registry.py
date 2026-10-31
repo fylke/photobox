@@ -69,6 +69,20 @@ def test_registry_skips_unavailable_camera_for_role_selection():
     assert registry.descriptors()[0].available is False
 
 
+def test_registry_can_select_an_alternate_role_camera_excluding_failed_ids():
+    primary = IdentifiedCamera("dslr:capture")
+    fallback = IdentifiedCamera("webcam:capture")
+    registry = CameraRegistry(
+        [primary, fallback],
+        roles={
+            primary.camera_id: {"capture"},
+            fallback.camera_id: {"capture"},
+        },
+    )
+
+    assert registry.camera_for_role("capture", exclude_camera_ids={primary.camera_id}) is fallback
+
+
 def test_registry_skips_cameras_without_the_requested_capability():
     dslr = CaptureOnlyCamera("dslr:capture")
     webcam = IdentifiedCamera("webcam:preview")

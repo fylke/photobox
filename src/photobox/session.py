@@ -34,6 +34,7 @@ class CaptureSession:
     started_at: str
     camera_id: str
     shots_taken: int = 0
+    camera_fallback: bool = False
     photo_ids: list[str] = field(default_factory=list)
     low_quality_photo_ids: list[str] = field(default_factory=list)
 
@@ -56,6 +57,7 @@ class SessionManager:
         countdown_seconds: int,
         camera: Camera | None = None,
         preview_frame_provider: Callable[[], bytes | None] | None = None,
+        fallback_camera_provider: Callable[[set[str]], Camera | None] | None = None,
     ) -> CaptureSession:
         if self.current and self.current.state is not SessionState.DONE:
             raise SessionConflict("A session is already in progress")
@@ -66,6 +68,8 @@ class SessionManager:
 
         self._active_camera = camera or self.camera
         self._preview_frame_provider = preview_frame_provider
+        self._fallback_camera_provider = fallback_camera_provider
+        self._failed_camera_ids: set[str] = set()
         self.current = CaptureSession(
             id=str(uuid4()),
             state=SessionState.ARMED,
@@ -86,7 +90,7 @@ class SessionManager:
         elif session.state is SessionState.COUNTDOWN:
             session.state = SessionState.CAPTURING
         elif session.state is SessionState.CAPTURING:
-            captured = self._capture_with_fallback()
+            captured = self._capture_with_fallback(session)
             photo_id = self.storage.save_photo(session.id, captured)
             session.photo_ids.append(photo_id)
             if captured.low_quality:
@@ -111,13 +115,29 @@ class SessionManager:
 
         return session
 
-    def _capture_with_fallback(self) -> CapturedImage:
+    def _capture_with_fallback(self, session: CaptureSession) -> CapturedImage:
         try:
             return self._active_camera.capture_still()
-        except RuntimeError:
+        except RuntimeError as first_error:
             try:
                 return self._active_camera.capture_still()
             except RuntimeError as retry_error:
+                self._failed_camera_ids.add(self._active_camera.camera_id)
+                fallback_error = retry_error
+                while self._fallback_camera_provider is not None:
+                    fallback_camera = self._fallback_camera_provider(self._failed_camera_ids)
+                    if fallback_camera is None:
+                        break
+                    self._failed_camera_ids.add(fallback_camera.camera_id)
+                    try:
+                        captured = fallback_camera.capture_still()
+                    except RuntimeError as camera_error:
+                        fallback_error = camera_error
+                        continue
+                    self._active_camera = fallback_camera
+                    session.camera_id = fallback_camera.camera_id
+                    session.camera_fallback = True
+                    return captured
                 frame = (
                     self._preview_frame_provider()
                     if self._preview_frame_provider is not None
@@ -131,6 +151,6 @@ class SessionManager:
                 ):
                     return CapturedImage(frame, "jpg", "image/jpeg", low_quality=True)
                 raise RuntimeError(
-                    f"Camera capture failed after one retry and no recent preview frame "
-                    f"is available: {retry_error}"
-                ) from retry_error
+                    f"Camera capture failed after one retry and no fallback camera or recent "
+                    f"preview frame is available: {fallback_error}"
+                ) from first_error

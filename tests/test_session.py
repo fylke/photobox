@@ -28,6 +28,12 @@ class FailingCamera(AlternateCamera):
         raise RuntimeError("DSLR unavailable")
 
 
+class FallbackCamera(AlternateCamera):
+    @property
+    def camera_id(self) -> str:
+        return "webcam-fallback"
+
+
 class SessionManagerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -107,6 +113,31 @@ class SessionManagerTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "after one retry"):
             self.manager.advance(session.id)
         self.assertEqual(failing_camera.capture_attempts, 2)
+
+    def test_failed_camera_switches_to_available_capture_fallback(self) -> None:
+        failing_camera = FailingCamera()
+        fallback_camera = FallbackCamera()
+        session = self.manager.start(
+            shots=1,
+            countdown_seconds=0,
+            camera=failing_camera,
+            fallback_camera_provider=lambda failed: (
+                None if fallback_camera.camera_id in failed else fallback_camera
+            ),
+        )
+
+        for _ in range(5):
+            session = self.manager.advance(session.id)
+
+        self.assertEqual(failing_camera.capture_attempts, 2)
+        self.assertEqual(session.camera_id, fallback_camera.camera_id)
+        self.assertTrue(session.camera_fallback)
+        self.assertEqual(session.low_quality_photo_ids, [])
+        self.assertTrue(
+            (
+                self.storage_dir / "events" / "default" / session.id / f"{session.photo_ids[0]}.ppm"
+            ).is_file()
+        )
 
 
 if __name__ == "__main__":

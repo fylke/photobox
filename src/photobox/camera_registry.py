@@ -104,14 +104,17 @@ class CameraRegistry:
         client_id: str | None = None,
         *,
         available_only: bool = True,
+        exclude_camera_ids: set[str] | None = None,
     ) -> Camera | None:
         with self._configuration_lock:
             bound_ids = self._bindings.get(client_id) if client_id is not None else None
             candidates = bound_ids if bound_ids is not None else tuple(self._cameras)
+            excluded = exclude_camera_ids or set()
             return next(
                 (
                     self._cameras[camera_id]
                     for camera_id in candidates
+                    if camera_id not in excluded
                     if role in self._roles[camera_id]
                     and (
                         self._cameras[camera_id].capabilities().preview

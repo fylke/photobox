@@ -404,6 +404,11 @@ def create_app(
                     preview_frame_provider=lambda: registry.latest_preview_frame(
                         principal.credential_id
                     ),
+                    fallback_camera_provider=lambda failed_camera_ids: registry.camera_for_role(
+                        "capture",
+                        principal.credential_id,
+                        exclude_camera_ids=failed_camera_ids,
+                    ),
                 )
             except SessionConflict as error:
                 raise HTTPException(status_code=409, detail=str(error)) from error
