@@ -137,13 +137,13 @@ The system supports N cameras. Screens (and phone clients) are **bound** to one 
 
 | Situation | Fallback |
 |-----------|----------|
-| DSLR disconnects or battery dies | Switch to webcam capture, show a notice, retry the DSLR in the background |
+| DSLR disconnects or battery dies | Switch to webcam capture when available, show a notice, and select the DSLR again after the background availability scan detects recovery |
 | DSLR live view unavailable | Use webcam preview, or no preview |
 | Webcam disconnects during preview | Show a still placeholder, keep capture working |
 | DSLR capture fails | Retry once, then use the latest preview frame; flag the photo as "low quality" in metadata |
 | No camera at all | Booth reports "no camera" on all clients, stays up for setup (#7) |
 
-During an active capture, the daemon retries the selected camera once, then tries another available camera assigned the `capture` role for that paired client. The saved session camera ID changes to the camera that actually captured the photo. Before each subsequent shot, it re-probes the preferred camera and switches back if it is available again. If alternate capture fails, the latest valid preview frame remains the low-quality fallback. Background device rediscovery and mid-shot intervention are not implemented.
+During an active capture, the daemon retries the selected camera once, then tries another available camera assigned the `capture` role for that paired client. The saved session camera ID changes to the camera that actually captured the photo. Before each subsequent shot, it re-probes the preferred camera and switches back if it is available again. A background monitor also refreshes cached availability every five seconds; its initial scan runs off the request path. If alternate capture fails, the latest valid preview frame remains the low-quality fallback. A device disconnect does not interrupt an in-progress capture.
 
 ## 6. Display and Preview
 
@@ -233,7 +233,7 @@ A session has: a mode (`photo`, `strip`, `gif`), the number of shots, the countd
 
 ### 7.2 Animated GIFs (#10)
 
-- Frames come from the selected camera's preview stream when at least two recent samples are available; otherwise completed-session still photos are used. Timed still capture is a future fallback.
+- Frames come from the selected camera's preview stream when at least two recent samples are available; otherwise completed-session still photos are used. Do not take new timed still photos for GIF generation.
 - The current daemon caps animations at 8 frames, 4 frames per second, 640x640 pixels, and 10 MB. Preview history is held in a bounded in-memory ring buffer and expires after 10 seconds.
 - Encoding uses Pillow in a response background task to keep the request handler and still-capture path separate. Encoder and size failures are reported in the gallery.
 

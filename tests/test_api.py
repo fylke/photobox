@@ -60,6 +60,16 @@ class ConfigurableMockCamera(MockCamera):
         return self._camera_id
 
 
+class AvailabilityCountingCamera(MockCamera):
+    def __init__(self):
+        self.availability_checks = 0
+
+    @property
+    def available(self):
+        self.availability_checks += 1
+        return True
+
+
 def test_mock_session_api_captures_and_persists(tmp_path):
     client = paired_client(tmp_path)
 
@@ -383,6 +393,17 @@ def test_camera_status_reports_capabilities_roles_and_availability(tmp_path):
             },
         }
     ]
+
+
+def test_camera_status_and_health_use_cached_availability(tmp_path):
+    camera = AvailabilityCountingCamera()
+    registry = CameraRegistry([camera])
+    camera.availability_checks = 0
+    client = TestClient(create_app(storage_dir=tmp_path, camera_registry=registry))
+
+    assert client.get("/api/health").json() == {"status": "ok", "camera": "mock-0"}
+    assert client.get("/api/cameras").json()[0]["available"] is True
+    assert camera.availability_checks == 0
 
 
 def test_no_camera_keeps_status_available_and_rejects_capture_and_preview(tmp_path):
