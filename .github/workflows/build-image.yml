@@ -65,6 +65,11 @@ jobs:
             e2fsprogs file gpg grep kmod libcap2-bin parted pigz quilt \
             qemu-user-binfmt rsync xxd xz-utils zerofree zip
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4.4.0
+        with:
+          platforms: arm64
+
       - name: Build minimal generic Raspberry Pi OS image
         working-directory: pi-gen
         run: sudo ./build.sh -c photobox-config
