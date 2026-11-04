@@ -1,6 +1,6 @@
 python3 -m venv /opt/photobox/venv
-/opt/photobox/venv/bin/pip install --no-cache-dir /opt/photobox/photobox.whl
-rm /opt/photobox/photobox.whl
+/opt/photobox/venv/bin/pip install --no-cache-dir /opt/photobox/photobox-*.whl
+rm /opt/photobox/photobox-*.whl
 groupadd --system photobox
 useradd --system --gid photobox --home-dir /var/lib/photobox --create-home \
 	--shell /usr/sbin/nologin --groups video photobox

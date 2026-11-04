@@ -48,7 +48,7 @@ jobs:
             image/photobox-stage/00-photobox/files/photobox-regulatory-domain.service \
             image/photobox-stage/00-photobox/files/50-photobox-network.rules \
             pi-gen/photobox/00-photobox/files/
-          cp dist/photobox-*.whl pi-gen/photobox/00-photobox/files/photobox.whl
+          cp dist/photobox-*.whl pi-gen/photobox/00-photobox/files/
           cat > pi-gen/photobox-config <<'EOF'
           IMG_NAME='photobox'
           TARGET_HOSTNAME='photobox'
