@@ -76,7 +76,7 @@ jobs:
           test "${#images[@]}" -eq 1
           image="${images[0]}"
           xz --test "$image"
-          sha256sum "$image" | tee pi-gen/deploy/SHA256SUMS
+          sha256sum "$image" | sudo tee pi-gen/deploy/SHA256SUMS
 
       - uses: actions/upload-artifact@v4
         with:
