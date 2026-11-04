@@ -68,7 +68,7 @@ Rationale:
 
 ## 4. Hardware Profiles
 
-The booth detects what is present at startup and on hot-plug, and runs in the best available profile. Profiles are not hard-coded modes.
+The booth detects what is present at startup and on hot-plug, and runs in the best available profile. Profiles are not hard-coded modes. Environment-configured cameras are probed by a background monitor, which refreshes cached availability every five seconds so camera status and selection requests do not synchronously wait for `gphoto2`. Availability may initially report false until the first scan finishes; failed captures still trigger the session's immediate camera failover.
 
 | Profile | Camera | Screen | Extras | Behaviour |
 |---------|--------|--------|--------|-----------|
@@ -131,16 +131,19 @@ The system supports N cameras. Screens (and phone clients) are **bound** to one 
 - A binding maps `screen → [camera ids]`. A screen bound to several cameras shows a grid or switchable view.
 - A booth session names a **capture camera set**. Defaults to all cameras bound to the screen that started the session.
 - If a bound camera is missing, the screen shows the remaining cameras and a warning. If none are available, it falls back to the status screen (section 6.4).
+- The initial daemon persists camera role assignments and per-client camera ID bindings in `camera.json` under its data directory. Administrators read or update this configuration through `/api/cameras/config`; unknown camera IDs are rejected. Current bindings are camera-selection preferences for paired clients, not screen registrations or multi-camera layouts.
 
 ### 5.4 Camera fallbacks
 
 | Situation | Fallback |
 |-----------|----------|
-| DSLR disconnects or battery dies | Switch to webcam capture, show a notice, retry the DSLR in the background |
+| DSLR disconnects or battery dies | Switch to webcam capture when available, show a notice, and select the DSLR again after the background availability scan detects recovery |
 | DSLR live view unavailable | Use webcam preview, or no preview |
 | Webcam disconnects during preview | Show a still placeholder, keep capture working |
 | DSLR capture fails | Retry once, then use the latest preview frame; flag the photo as "low quality" in metadata |
 | No camera at all | Booth reports "no camera" on all clients, stays up for setup (#7) |
+
+During an active capture, the daemon retries the selected camera once, then tries another available camera assigned the `capture` role for that paired client. The saved session camera ID changes to the camera that actually captured the photo. Before each subsequent shot, it re-probes the preferred camera and switches back if it is available again. A background monitor also refreshes cached availability every five seconds; its initial scan runs off the request path. If alternate capture fails, the latest valid preview frame remains the low-quality fallback. A device disconnect does not interrupt an in-progress capture.
 
 ## 6. Display and Preview
 
@@ -230,15 +233,15 @@ A session has: a mode (`photo`, `strip`, `gif`), the number of shots, the countd
 
 ### 7.2 Animated GIFs (#10)
 
-- Frames come from the preview stream (or burst captures) of the selected camera.
-- Maximum length is configurable (`gif.max_seconds`, `gif.fps`, `gif.max_width`), enforced by the daemon regardless of what the client asks for.
-- Encoding uses ffmpeg/Pillow. Runs in the background to keep the booth responsive. An optional MP4/WebP output is offered when GIF size is too large.
-- Fallback: if the encoder is too slow (Pi 3), reduce resolution/fps automatically.
+- Frames come from the selected camera's preview stream when at least two recent samples are available; otherwise completed-session still photos are used. Do not take new timed still photos for GIF generation.
+- The current daemon caps animations at 8 frames, 4 frames per second, 640x640 pixels, and 10 MB. Preview history is held in a bounded in-memory ring buffer and expires after 10 seconds.
+- Encoding uses Pillow in a response background task to keep the request handler and still-capture path separate. Encoder and size failures are reported in the gallery.
 
 ### 7.3 Frames and composition (#3)
 
 - A **frame** (overlay/template) is a PNG with transparent areas or a layout (strip, grid) with slot definitions.
 - Applied to a set of photos on the server (`area:server`), producing a composed image next to the originals. Originals are never modified.
+- A locally supplied transparent PNG may be configured with `PHOTOBOX_STRIP_OVERLAY`. The current built-in vertical-strip layout applies it over each 360x480 photo slot; the daemon validates format, dimensions, transparency, and file size before use. Frame upload/editor UI remains deferred.
 - **Pre-applied frame:** if the preview source supports overlays (the UI can draw the frame over the preview; some DSLRs/webcams can't), the preview shows the frame so the guest can position themselves. This is a UI overlay only; actual composition still happens server-side. If the active display cannot overlay (e.g. no screen), the step is skipped.
 - Frames are managed (upload, select, set default) from the phone UI.
 

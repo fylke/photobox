@@ -1,0 +1,12 @@
+[Unit]
+Description=Set Wi-Fi regulatory domain for Photobox
+Before=NetworkManager.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/photobox/device.env
+ExecStart=/usr/sbin/iw reg set ${PHOTOBOX_WIFI_COUNTRY}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

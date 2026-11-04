@@ -1,9 +1,27 @@
 import os
 import subprocess
 import unittest
+from io import BytesIO
 from unittest.mock import patch
 
-from photobox.camera import WebcamCamera, camera_from_environment
+from photobox.camera import MockCamera, WebcamCamera, camera_from_environment
+
+
+class FakePreviewProcess:
+    def __init__(self, output: bytes):
+        self.stdout = BytesIO(output)
+        self.returncode = None
+        self.terminated = False
+
+    def poll(self):
+        return self.returncode
+
+    def terminate(self):
+        self.terminated = True
+        self.returncode = -15
+
+    def wait(self, timeout=None):
+        return self.returncode
 
 
 class WebcamCameraTests(unittest.TestCase):
@@ -48,6 +66,29 @@ class WebcamCameraTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "device busy"):
             WebcamCamera().capture_still()
+
+    @patch("photobox.camera.shutil.which", return_value="/usr/bin/ffmpeg")
+    @patch("photobox.camera.subprocess.Popen")
+    def test_preview_extracts_frames_and_stops_ffmpeg_on_close(self, popen, _which):
+        first = b"\xff\xd8first\xff\xd9"
+        second = b"\xff\xd8second\xff\xd9"
+        process = FakePreviewProcess(b"noise" + first + second)
+        popen.return_value = process
+
+        frames = WebcamCamera(preview_fps=5, preview_width=320).iter_preview_frames()
+
+        self.assertEqual(next(frames), first)
+        self.assertEqual(next(frames), second)
+        frames.close()
+        self.assertTrue(process.terminated)
+        self.assertIn("/dev/video0", popen.call_args.args[0])
+        self.assertEqual(popen.call_args.kwargs["stderr"], subprocess.DEVNULL)
+
+    def test_mock_camera_provides_browser_compatible_preview_frames(self):
+        frame = next(MockCamera().iter_preview_frames())
+
+        self.assertTrue(frame.startswith(b"\xff\xd8"))
+        self.assertTrue(frame.endswith(b"\xff\xd9"))
 
 
 if __name__ == "__main__":

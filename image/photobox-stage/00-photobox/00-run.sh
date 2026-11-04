@@ -1,0 +1,13 @@
+#!/bin/bash -e
+
+install -d "${ROOTFS_DIR}/opt/photobox"
+install -m 0644 files/photobox-*.whl "${ROOTFS_DIR}/opt/photobox/"
+install -D -m 0644 \
+	files/photobox.service \
+	"${ROOTFS_DIR}/etc/systemd/system/photobox.service"
+install -D -m 0644 \
+	files/photobox-regulatory-domain.service \
+	"${ROOTFS_DIR}/etc/systemd/system/photobox-regulatory-domain.service"
+install -D -m 0644 \
+	files/50-photobox-network.rules \
+	"${ROOTFS_DIR}/etc/polkit-1/rules.d/50-photobox-network.rules"

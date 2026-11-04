@@ -1,0 +1,7 @@
+polkit.addRule(function(action, subject) {
+    if (subject.user == "photobox" &&
+        (action.id == "org.freedesktop.NetworkManager.network-control" ||
+         action.id == "org.freedesktop.NetworkManager.settings.modify.system")) {
+        return polkit.Result.YES;
+    }
+});
