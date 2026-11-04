@@ -1,6 +1,7 @@
 name: Build Raspberry Pi image
 
 on:
+  workflow_call:
   workflow_dispatch:
   push:
     paths:
@@ -76,7 +77,7 @@ jobs:
           test "${#images[@]}" -eq 1
           image="${images[0]}"
           xz --test "$image"
-          sha256sum "$image" | sudo tee pi-gen/deploy/SHA256SUMS
+          (cd pi-gen/deploy && sha256sum "$(basename "$image")" | sudo tee SHA256SUMS)
 
       - uses: actions/upload-artifact@v4
         with:

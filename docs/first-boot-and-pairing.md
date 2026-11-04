@@ -44,7 +44,7 @@ Do not combine these codes or post them in a public place. A hidden Wi-Fi name w
 
 ## Prepare one Pi
 
-1. Download the generic `.img.xz` artifact built by the project’s image workflow. It contains the minimal Raspberry Pi OS base and Photobox software, but no per-device credentials. The workflow currently publishes an artifact, not a release download.
+1. Download the generic `.img.xz` from a Photobox alpha, beta, or release-candidate prerelease. It contains the minimal Raspberry Pi OS base and Photobox software, but no per-device credentials. It is for controlled hardware testing and has not been validated on physical Pi hardware.
 2. On a trusted Linux computer, run `photobox-provision --base-image <image.img.xz> --wifi-country <ISO-country-code> --output-dir <new-private-directory>` for the Pi you are preparing. Use the country where the Pi will operate. It creates a **per-device `.img` image**, a visible unique Wi-Fi name, a random Wi-Fi password, and a unique one-time 6-digit setup PIN. The tool displays the PIN once; write it down and keep it private. It requires loop-device and mount tools and may ask for `sudo`. Follow the tool’s instructions for saving or printing the Wi-Fi join code.
 3. Keep the per-device image and codes together only while preparing that Pi. Do not commit them to Git, upload them to a shared CI artifact, or paste them into a public issue or chat. The Wi-Fi password, setup PIN, and guest invitation are different secrets.
 4. Write the per-device image to the Pi’s microSD card with the operating-system imaging tool recommended by the project. **Writing an image erases the selected card.** Double-check the selected drive before confirming.
