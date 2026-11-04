@@ -63,12 +63,7 @@ jobs:
           sudo apt-get install -y \
             arch-test bc bmap-tools coreutils curl debootstrap dosfstools \
             e2fsprogs file gpg grep kmod libcap2-bin parted pigz quilt \
-            rsync xxd xz-utils zerofree zip
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4.4.0
-        with:
-          platforms: arm64
+            qemu-user-binfmt rsync xxd xz-utils zerofree zip
 
       - name: Build minimal generic Raspberry Pi OS image
         working-directory: pi-gen
