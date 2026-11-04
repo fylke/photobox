@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-_PIN_LENGTH = 10
+_PIN_LENGTH = 6
 _SCRYPT_N = 1 << 14
 _SCRYPT_R = 8
 _SCRYPT_P = 1
@@ -50,7 +50,7 @@ def generate_setup_pin() -> str:
 
 def hash_setup_pin(pin: str) -> str:
     if not _is_setup_pin(pin):
-        raise ValueError("Setup PIN must contain exactly 10 digits")
+        raise ValueError("Setup PIN must contain exactly 6 digits")
     salt = secrets.token_bytes(16)
     digest = hashlib.scrypt(
         pin.encode("ascii"),

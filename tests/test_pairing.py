@@ -43,9 +43,9 @@ class PairingManagerTests(unittest.TestCase):
         pin = generate_setup_pin()
         encoded_hash = hash_setup_pin(pin)
 
-        self.assertRegex(pin, r"^[0-9]{10}$")
+        self.assertRegex(pin, r"^[0-9]{6}$")
         self.assertTrue(verify_setup_pin(pin, encoded_hash))
-        self.assertFalse(verify_setup_pin("0000000000", encoded_hash))
+        self.assertFalse(verify_setup_pin("000000", encoded_hash))
         self.assertTrue(encoded_hash.startswith("scrypt$"))
 
     def test_setup_pin_is_consumed_and_admin_survives_restart(self):
@@ -67,7 +67,7 @@ class PairingManagerTests(unittest.TestCase):
         with self.assertRaisesRegex(PairingError, "different setup PIN"):
             PairingManager(
                 self.directory / "pairing.sqlite3",
-                hash_setup_pin("1234567890"),
+                hash_setup_pin("123456"),
                 clock=self.clock,
             )
 
@@ -95,7 +95,7 @@ class PairingManagerTests(unittest.TestCase):
     def test_setup_claim_attempts_are_rate_limited(self):
         for _ in range(5):
             with self.assertRaises(PairingError):
-                self.manager.claim_admin("0000000000", client_key="phone-1")
+                self.manager.claim_admin("000000", client_key="phone-1")
 
         with self.assertRaisesRegex(PairingError, "rate limit"):
             self.manager.claim_admin(self.pin, client_key="phone-1")

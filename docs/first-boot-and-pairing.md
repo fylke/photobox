@@ -1,6 +1,6 @@
 # First Boot and Pairing
 
-> **Status:** Phone pairing, the local one-time PIN command, a minimal Raspberry Pi OS Lite image build workflow, Linux-based per-device image provisioning, setup hotspot configuration, and admin-controlled venue Wi-Fi setup are implemented. The image and network paths have not yet been validated on physical Pi hardware.
+> **Status:** Phone pairing, the local one-time PIN command, a minimal stage-1-based Raspberry Pi OS image workflow, Linux-based per-device image provisioning, setup hotspot configuration, and admin-controlled venue Wi-Fi setup are implemented. The image and network paths have not yet been validated on physical Pi hardware.
 
 Maintainers: the physical acceptance procedure is in [Milestone 2 Hardware Validation](hardware-validation-m2.md). Do not mark the setup flow complete until that checklist passes on the supported Pi/OS.
 
@@ -8,7 +8,7 @@ This guide is for someone setting up a Photobox without needing to know Linux ne
 
 ## The short version
 
-1. Download the generic Raspberry Pi OS Lite image artifact from the image-build workflow.
+1. Download the generic minimal Raspberry Pi OS image artifact from the image-build workflow.
 2. On Linux, use the local image-provisioning tool to make a copy for one specific Pi. It creates that Pi’s Wi-Fi details and one-time setup PIN.
 3. Write the per-Pi image to a microSD card and put it in that Pi.
 4. Join the visible Wi-Fi network created by the Pi using the Wi-Fi QR code or the printed details.
@@ -23,7 +23,7 @@ These are two different operations: **joining Wi-Fi connects a device to the Pi�
 This is the development flow for an already-installed host. Network management requires a provisioned Pi image:
 
 1. Install Photobox on a host and choose a data directory. Keep the same `PHOTOBOX_DATA_DIR` for the setup command and daemon if you override its default.
-2. Run `photobox-setup-pin` in a trusted terminal. It prints a random 10-digit PIN once and stores only a slow hash in `pairing.sqlite3`. Record the PIN privately; the command refuses to replace it after setup is initialized.
+2. Run `photobox-setup-pin` in a trusted terminal. It prints a random 6-digit PIN once and stores only a slow hash in `pairing.sqlite3`. Record the PIN privately; the command refuses to replace it after setup is initialized.
 3. Start `photobox` and open its address from a phone or laptop already on a network that can reach the host.
 4. Enter the PIN to claim admin access. From the admin page, create a guest invitation QR or copy its short-lived link. Guests must already be on a reachable network before they scan/open the invitation.
 5. Guests can view the active session; one phone controls it. The admin can revoke guest access from the paired-phone list.
@@ -34,18 +34,18 @@ For maintainers preparing a per-device image, `photobox-provision --output-dir <
 
 ## Three codes, three purposes
 
-`photobox-setup-pin` initializes an already-installed host. `photobox-provision --base-image <image.img.xz> --wifi-country <ISO-country-code> --output-dir <private-directory>` creates a per-device `.img` from a generic Raspberry Pi OS Lite image. Image provisioning currently requires Linux and may request `sudo` access to loop devices and the image filesystem.
+`photobox-setup-pin` initializes an already-installed host. `photobox-provision --base-image <image.img.xz> --wifi-country <ISO-country-code> --output-dir <private-directory>` creates a per-device `.img` from the generic minimal Raspberry Pi OS image. Image provisioning currently requires Linux and may request `sudo` access to loop devices and the image filesystem.
 
 - **Wi-Fi join code:** contains the visible network name and Wi-Fi password. It lets a phone or laptop connect to the Pi’s network. It does not sign the person in to Photobox.
-- **Setup PIN:** a unique, one-time 10-digit number for the first administrator claim. It is not the Wi-Fi password and is not shared with guests. The local provisioning tool shows it when preparing that Pi’s image. The Pi stores only a hash and invalidates the PIN after a successful claim.
+- **Setup PIN:** a unique, one-time 6-digit number for the first administrator claim. It is not the Wi-Fi password and is not shared with guests. The local provisioning tool shows it when preparing that Pi’s image. The Pi stores only a hash and invalidates the PIN after a successful claim.
 - **Guest invitation QR:** a short-lived invitation created by the administrator. It pairs one guest browser with the booth. It is not an administrator credential and does not contain the Wi-Fi password.
 
 Do not combine these codes or post them in a public place. A hidden Wi-Fi name would not make the network secure; use the unique Wi-Fi password and separate Photobox credentials instead.
 
 ## Prepare one Pi
 
-1. Download the generic `.img.xz` artifact built by the project’s image workflow. It contains Raspberry Pi OS Lite and Photobox software, but no per-device credentials. The workflow currently publishes an artifact, not a release download.
-2. On a trusted Linux computer, run `photobox-provision --base-image <image.img.xz> --wifi-country <ISO-country-code> --output-dir <new-private-directory>` for the Pi you are preparing. Use the country where the Pi will operate. It creates a **per-device `.img` image**, a visible unique Wi-Fi name, a random Wi-Fi password, and a unique one-time 10-digit setup PIN. The tool displays the PIN once; write it down and keep it private. It requires loop-device and mount tools and may ask for `sudo`. Follow the tool’s instructions for saving or printing the Wi-Fi join code.
+1. Download the generic `.img.xz` artifact built by the project’s image workflow. It contains the minimal Raspberry Pi OS base and Photobox software, but no per-device credentials. The workflow currently publishes an artifact, not a release download.
+2. On a trusted Linux computer, run `photobox-provision --base-image <image.img.xz> --wifi-country <ISO-country-code> --output-dir <new-private-directory>` for the Pi you are preparing. Use the country where the Pi will operate. It creates a **per-device `.img` image**, a visible unique Wi-Fi name, a random Wi-Fi password, and a unique one-time 6-digit setup PIN. The tool displays the PIN once; write it down and keep it private. It requires loop-device and mount tools and may ask for `sudo`. Follow the tool’s instructions for saving or printing the Wi-Fi join code.
 3. Keep the per-device image and codes together only while preparing that Pi. Do not commit them to Git, upload them to a shared CI artifact, or paste them into a public issue or chat. The Wi-Fi password, setup PIN, and guest invitation are different secrets.
 4. Write the per-device image to the Pi’s microSD card with the operating-system imaging tool recommended by the project. **Writing an image erases the selected card.** Double-check the selected drive before confirming.
 5. Put the card in the Pi, connect the camera and power, then start the Pi. The setup network has a visible name so it is easy to find; hiding it would not prevent discovery or unauthorized access.

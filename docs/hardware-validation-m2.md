@@ -29,7 +29,7 @@ Before testing, record the test ID, date, tester, Pi model, OS/image version and
 ### A. Provision and first boot
 
 - [ ] Build/test the generic base image in CI; record its artifact checksum.
-- [ ] On the trusted provisioning computer, create a per-device image. Confirm it displays a unique 10-digit PIN once, creates a visible unique SSID and random Wi-Fi password, and does not send those secrets to CI or ordinary logs.
+- [ ] On the trusted provisioning computer, create a per-device image. Confirm it displays a unique 6-digit PIN once, creates a visible unique SSID and random Wi-Fi password, and does not send those secrets to CI or ordinary logs.
 - [ ] Verify a second initialization attempt is refused. Verify the setup PIN is not stored in plaintext in the generated image/configuration.
 - [ ] Flash the per-device image to the disposable SD card and boot the Pi. Confirm the SSID is visible and the advertised Wi-Fi join QR contains only Wi-Fi credentials.
 - [ ] Join from phone A. Confirm the phone can reach the local status page while it reports “no internet”; confirm the URL contains no PIN or Wi-Fi password.

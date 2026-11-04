@@ -43,7 +43,7 @@ class StartSessionRequest(BaseModel):
 
 
 class ClaimRequest(BaseModel):
-    pin: str = Field(min_length=10, max_length=10, pattern=r"^[0-9]{10}$")
+    pin: str = Field(min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
 
 
 class RedeemInvitationRequest(BaseModel):

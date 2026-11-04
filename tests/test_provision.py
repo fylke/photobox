@@ -25,7 +25,7 @@ def test_local_setup_command_prints_pin_once_and_stores_only_hash(
     main()
 
     output = capsys.readouterr().out
-    match = re.search(r"PIN: ([0-9]{10})", output)
+    match = re.search(r"PIN: ([0-9]{6})", output)
     assert match is not None
     pin = match.group(1)
 
@@ -48,7 +48,7 @@ def test_local_setup_command_prints_pin_once_and_stores_only_hash(
 
 def test_local_setup_command_refuses_to_replace_existing_pin(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("PHOTOBOX_DATA_DIR", str(tmp_path))
-    PairingManager(tmp_path / "pairing.sqlite3", hash_setup_pin("1234567890"))
+    PairingManager(tmp_path / "pairing.sqlite3", hash_setup_pin("123456"))
 
     with pytest.raises(SystemExit):
         main()
@@ -70,7 +70,7 @@ def test_device_bundle_contains_private_manifest_and_wifi_qr(monkeypatch, tmp_pa
     provision_device(["--output-dir", str(output_dir)])
 
     output = capsys.readouterr().out
-    pin_match = re.search(r"Setup PIN: ([0-9]{10})", output)
+    pin_match = re.search(r"Setup PIN: ([0-9]{6})", output)
     assert pin_match is not None
     pin = pin_match.group(1)
     manifest_path = output_dir / "device.json"
@@ -145,7 +145,7 @@ def test_device_bundle_provisions_compressed_base_image(monkeypatch, tmp_path, c
     )
 
     output = capsys.readouterr().out
-    pin = re.search(r"Setup PIN: ([0-9]{10})", output).group(1)
+    pin = re.search(r"Setup PIN: ([0-9]{6})", output).group(1)
     image_path = output_dir / "photobox-device.img"
     manifest = json.loads(installed_files["device.json"])
 
@@ -272,7 +272,7 @@ def test_generated_device_bundle_can_claim_admin_on_installed_host(tmp_path, cap
     bundle_dir = tmp_path / "device"
     provision_device(["--output-dir", str(bundle_dir)])
     output = capsys.readouterr().out
-    pin = re.search(r"Setup PIN: ([0-9]{10})", output).group(1)
+    pin = re.search(r"Setup PIN: ([0-9]{6})", output).group(1)
     client = TestClient(
         create_app(
             storage_dir=tmp_path / "runtime",

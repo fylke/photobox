@@ -13,7 +13,7 @@ from photobox.camera_registry import CameraRegistry
 from photobox.network import NetworkError, NetworkStatus
 from photobox.pairing import hash_setup_pin
 
-SETUP_PIN = "4829017365"
+SETUP_PIN = "482901"
 
 
 class FinitePreviewCamera(MockCamera):
@@ -310,6 +310,7 @@ def test_screen_ui_is_served_from_root(tmp_path):
     assert "Start session" in response.text
     assert "Continue" in response.text
     assert "Claim administrator access" in response.text
+    assert 'pattern="[0-9]{6}" minlength="6" maxlength="6"' in response.text
     assert "Create guest invitation" in response.text
     assert "Connect to venue Wi-Fi" in response.text
     assert "/api/network/status" in response.text
@@ -333,7 +334,7 @@ def test_unpaired_api_fails_closed_until_admin_claim(tmp_path):
         "claimed": False,
     }
     assert client.post("/api/sessions", json={"shots": 1}).status_code == 401
-    assert client.post("/api/pairing/claim", json={"pin": "0000000000"}).status_code == 401
+    assert client.post("/api/pairing/claim", json={"pin": "000000"}).status_code == 401
 
     claim = client.post("/api/pairing/claim", json={"pin": SETUP_PIN})
 

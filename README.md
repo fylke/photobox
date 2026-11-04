@@ -11,7 +11,7 @@ python -m pip install .
 photobox-setup-pin
 ```
 
-The setup command prints a random 10-digit PIN once and stores only its hash in the configured data directory. Keep the PIN private; the first successful admin claim consumes it. This initializes an already-installed host. It does not build a per-device OS image or configure Wi-Fi.
+The setup command prints a random 6-digit PIN once and stores only its hash in the configured data directory. Keep the PIN private; the first successful admin claim consumes it. This initializes an already-installed host. It does not build a per-device OS image or configure Wi-Fi.
 
 To prepare a private per-device credential bundle:
 
@@ -21,7 +21,7 @@ photobox-provision --output-dir "$HOME/photobox-device-setup"
 
 This prints the device’s SSID, Wi-Fi password, and setup PIN once; it writes `device.json` and a Wi-Fi join QR. On Linux, the output directory and files are restricted to the owner. **Without `--base-image`, it does not create or modify a bootable image, configure a hotspot, or connect a Pi to Wi-Fi yet.** Keep the output directory private and out of Git/shared CI artifacts.
 
-To put the credentials into a generic Raspberry Pi OS Lite image built by CI, run the provisioner on Linux:
+To put the credentials into the generic minimal Raspberry Pi OS image built by CI, run the provisioner on Linux:
 
 ```sh
 photobox-provision --base-image photobox.img.xz --wifi-country GB \

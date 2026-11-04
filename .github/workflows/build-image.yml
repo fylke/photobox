@@ -38,7 +38,6 @@ jobs:
           cp image/photobox-stage/EXPORT_IMAGE pi-gen/photobox/EXPORT_IMAGE
           cp image/photobox-stage/prerun.sh pi-gen/photobox/prerun.sh
           chmod +x pi-gen/photobox/prerun.sh
-          touch pi-gen/stage2/SKIP_IMAGES
           cp image/photobox-stage/00-photobox/00-packages-nr \
             image/photobox-stage/00-photobox/00-run-chroot.sh \
             pi-gen/photobox/00-photobox/
@@ -55,7 +54,7 @@ jobs:
           TARGET_HOSTNAME='photobox'
           RELEASE='trixie'
           ARCH='arm64'
-          STAGE_LIST='stage0 stage1 stage2 photobox'
+          STAGE_LIST='stage0 stage1 photobox'
           DEPLOY_COMPRESSION='xz'
           ENABLE_SSH=0
           ENABLE_CLOUD_INIT=0
@@ -66,7 +65,7 @@ jobs:
             e2fsprogs file gpg grep kmod libcap2-bin parted pigz quilt \
             qemu-user-binfmt rsync xxd xz-utils zerofree zip
 
-      - name: Build generic Raspberry Pi OS Lite image
+      - name: Build minimal generic Raspberry Pi OS image
         working-directory: pi-gen
         run: sudo ./build.sh -c photobox-config
 
@@ -81,7 +80,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: photobox-raspios-lite-arm64
+          name: photobox-raspios-arm64
           path: pi-gen/deploy/*
           if-no-files-found: error
           compression-level: 0
