@@ -14,6 +14,7 @@ from pathlib import Path
 from shutil import copyfile, copyfileobj
 
 import qrcode
+from qrcode.image.svg import SvgPathImage
 
 from photobox.pairing import PairingError, PairingManager, generate_setup_pin, hash_setup_pin
 
@@ -127,11 +128,12 @@ def provision_device(argv: list[str] | None = None) -> None:
             **({"country": wifi_country} if wifi_country else {}),
         },
     }
-    qr_image = qrcode.make(
+    qr_code = qrcode.QRCode()
+    qr_code.add_data(
         f"WIFI:T:WPA;S:{_escape_wifi_qr_value(wifi_ssid)};P:{_escape_wifi_qr_value(wifi_password)};H:false;;"
     )
     qr_buffer = BytesIO()
-    qr_image.save(qr_buffer, format="PNG")
+    qr_code.make_image(image_factory=SvgPathImage).save(qr_buffer)
 
     output_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(output_dir, 0o700)
@@ -139,7 +141,7 @@ def provision_device(argv: list[str] | None = None) -> None:
         output_dir / "device.json",
         (json.dumps(manifest, indent=2) + "\n").encode("utf-8"),
     )
-    _write_private_file(output_dir / "wifi-join.png", qr_buffer.getvalue())
+    _write_private_file(output_dir / "wifi-join.svg", qr_buffer.getvalue())
     if args.base_image is not None:
         try:
             image = _create_device_image(args.base_image.expanduser(), output_dir, manifest)

@@ -33,6 +33,8 @@ jobs:
           set -euo pipefail
           mapfile -t images < <(find dist -maxdepth 1 -type f -name '*.img.xz' -print)
           test "${#images[@]}" -eq 1
+          mapfile -t provisioners < <(find dist -maxdepth 1 -type f -name '*.pyz' -print)
+          test "${#provisioners[@]}" -eq 1
           (cd dist && sha256sum --check SHA256SUMS)
           xz --test "${images[0]}"
 
@@ -42,7 +44,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
-            dist/*.img.xz dist/SHA256SUMS \
+            dist/*.img.xz dist/*.pyz dist/SHA256SUMS \
             --title "Photobox ${GITHUB_REF_NAME}" \
             --notes "Pre-release for controlled hardware testing only. CI image build succeeded, but physical Pi, camera, network, and two-phone validation remain outstanding. Use a disposable SD card and isolated network. See docs/hardware-validation-m2.md." \
             --prerelease

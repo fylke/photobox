@@ -46,10 +46,10 @@ Do not combine these codes or post them in a public place. A hidden Wi-Fi name w
 
 The image is a minimal 64-bit Raspberry Pi OS image with Photobox installed. It is generic: it does not yet contain the Wi-Fi credentials or setup PIN for your device.
 
-- For an alpha, beta, or release-candidate build, download the `.img.xz` image and `SHA256SUMS` from that GitHub prerelease.
-- For a workflow build, open the repository's **Actions** tab, select a successful **Build Raspberry Pi image** run, and download its `photobox-raspios-arm64` artifact. GitHub downloads this artifact as a ZIP; extract it before continuing. The artifact is retained for 30 days.
+- For an alpha, beta, or release-candidate build, download the `.img.xz` image, `photobox-provision.pyz`, and `SHA256SUMS` from that GitHub prerelease.
+- For a workflow build, open the repository's **Actions** tab, select a successful **Build Raspberry Pi image** run, and download its `photobox-raspios-arm64` artifact. GitHub downloads this artifact as a ZIP; extract it before continuing. It contains the image, the standalone provisioner, and their checksums. The artifact is retained for 30 days.
 
-Keep the image and checksum file in the same directory. From that directory, verify the download before using it:
+Keep the image, provisioner, and checksum file together. From that directory, verify the downloads before using them:
 
 ```sh
 sha256sum --check SHA256SUMS
@@ -58,28 +58,31 @@ xz --test photobox*.img.xz
 
 The checksum command should report `OK`; the archive test should exit without an error. If the artifact has a different image filename, use that exact filename in the `xz` command. Do not continue if verification fails.
 
-### 2. Install the provisioning tool
+### 2. Get the provisioning tool
 
-On the trusted Linux computer that will prepare the card, install Photobox from the project checkout. Python 3.11 or newer is required:
+The `photobox-provision.pyz` file is a self-contained Python tool included with the image download. It contains the provisioning code and its QR-code library, so you do not need to download the project source, install Photobox, or create a virtual environment. On the trusted Linux computer that will prepare the card, check that Python 3.11 or newer is available:
 
 ```sh
-python3 -m pip install .
+python3 --version
+python3 photobox-provision.pyz --help
 ```
 
-The computer must also have `losetup`, `lsblk`, `udevadm`, `mount`, and `install`. Image setup uses loop devices and mounts the image filesystem; the command may ask for `sudo` permission. Run this from the Photobox project directory. Keep the computer and its terminal private while the PIN and Wi-Fi password are displayed.
+The computer must also have `losetup`, `lsblk`, `udevadm`, `mount`, and `install`. Image setup uses loop devices and mounts the image filesystem; the command may ask for `sudo` permission. Keep the computer and its terminal private while the PIN and Wi-Fi password are displayed.
 
 ### 3. Create per-device credentials and image
 
 Choose a new, empty output directory for this Pi. The provisioner will not overwrite files in a non-empty directory. Replace the image path with the downloaded `.img.xz`, and replace `GB` with the two-letter ISO country code where the Pi will operate:
 
 ```sh
-photobox-provision \
+python3 "$HOME/Downloads/photobox-provision.pyz" \
 	--base-image "$HOME/Downloads/photobox.img.xz" \
 	--wifi-country GB \
 	--output-dir "$HOME/photobox-device-setup"
 ```
 
-The command creates `photobox-device.img`, `device.json`, and `wifi-join.png` in that directory. It prints the device's Wi-Fi name, Wi-Fi password, and one-time 6-digit setup PIN. Save the PIN privately; it cannot be displayed again. The image contains the PIN hash, not the PIN itself. The command also makes the output directory and files owner-only on Linux.
+The command creates `photobox-device.img`, `device.json`, and `wifi-join.svg` in that directory. It prints the device's Wi-Fi name, Wi-Fi password, and one-time 6-digit setup PIN. Save the PIN privately; it cannot be displayed again. The image contains the PIN hash, not the PIN itself. The command also makes the output directory and files owner-only on Linux.
+
+Open `wifi-join.svg` in a browser to display or print the Wi-Fi join QR.
 
 Do not omit `--base-image`: without it, the command only creates a credential bundle and does not produce a bootable image. Do not omit `--wifi-country` when building an image. If provisioning fails after creating files, preserve any useful error details but start again with a different empty output directory rather than mixing credentials from attempts.
 

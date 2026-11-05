@@ -59,13 +59,13 @@ def test_local_setup_command_refuses_to_replace_existing_pin(monkeypatch, tmp_pa
 def test_device_bundle_contains_private_manifest_and_wifi_qr(monkeypatch, tmp_path, capsys):
     output_dir = tmp_path / "device-one"
     qr_payloads = []
-    make_qr = provision.qrcode.make
+    add_data = provision.qrcode.QRCode.add_data
 
-    def record_qr_payload(payload):
+    def record_qr_payload(qr_code, payload, *args, **kwargs):
         qr_payloads.append(payload)
-        return make_qr(payload)
+        return add_data(qr_code, payload, *args, **kwargs)
 
-    monkeypatch.setattr(provision.qrcode, "make", record_qr_payload)
+    monkeypatch.setattr(provision.qrcode.QRCode, "add_data", record_qr_payload)
 
     provision_device(["--output-dir", str(output_dir)])
 
@@ -74,7 +74,7 @@ def test_device_bundle_contains_private_manifest_and_wifi_qr(monkeypatch, tmp_pa
     assert pin_match is not None
     pin = pin_match.group(1)
     manifest_path = output_dir / "device.json"
-    wifi_qr_path = output_dir / "wifi-join.png"
+    wifi_qr_path = output_dir / "wifi-join.svg"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     assert manifest["version"] == 1
@@ -85,7 +85,7 @@ def test_device_bundle_contains_private_manifest_and_wifi_qr(monkeypatch, tmp_pa
     assert qr_payloads == [
         f"WIFI:T:WPA;S:{manifest['wifi']['ssid']};P:{manifest['wifi']['password']};H:false;;"
     ]
-    assert wifi_qr_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    assert b"<svg" in wifi_qr_path.read_bytes()
     assert "No bootable image was created" in output
     if os.name != "nt":
         assert stat.S_IMODE(output_dir.stat().st_mode) == 0o700

@@ -30,9 +30,9 @@ Open `http://localhost:8000` on the same computer, or use the computer's reachab
 
 ## Raspberry Pi image
 
-The generic Raspberry Pi OS image is built by the `Build Raspberry Pi image` GitHub Actions workflow. Download its `photobox-raspios-arm64` artifact from a workflow run, or use the `.img.xz` and `SHA256SUMS` assets attached to an alpha, beta, or release-candidate prerelease. Verify the checksum before provisioning. The generic image has no per-device Wi-Fi password or setup PIN; provisioning creates those locally and inserts only the PIN hash into the image.
+The generic Raspberry Pi OS image is built by the `Build Raspberry Pi image` GitHub Actions workflow. Download its `photobox-raspios-arm64` artifact from a workflow run, or use the `.img.xz`, `photobox-provision.pyz`, and `SHA256SUMS` assets attached to an alpha, beta, or release-candidate prerelease. Verify the checksum before provisioning. The generic image has no per-device Wi-Fi password or setup PIN; provisioning creates those locally and inserts only the PIN hash into the image.
 
-Provisioning requires Linux, the project installed on the provisioning computer, and the image tools `losetup`, `lsblk`, `udevadm`, `mount`, and `install`. See the linked first-boot guide for the full commands, required country code, SD-card flashing, and first administrator claim. Do not share the per-device image or credential bundle: they contain that Pi's Wi-Fi credentials.
+Provisioning requires Linux, Python 3.11 or newer, and the image tools `losetup`, `lsblk`, `udevadm`, `mount`, and `install`. The release's self-contained `photobox-provision.pyz` tool needs no Photobox source checkout, package installation, or virtual environment. See the linked first-boot guide for the full commands, required country code, SD-card flashing, and first administrator claim. Do not share the per-device image or credential bundle: they contain that Pi's Wi-Fi credentials.
 
 On the provisioned Pi, an administrator can configure WPA-Personal venue Wi-Fi from the admin page. If connection fails, the setup hotspot remains available; a saved venue connection is retried after reboot. Enterprise Wi-Fi and captive-portal sign-in are not supported. These image and network paths still need physical Pi validation.
 
