@@ -39,6 +39,7 @@ jobs:
       - name: Publish hardware-testing prerelease
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
             dist/*.img.xz dist/SHA256SUMS \
