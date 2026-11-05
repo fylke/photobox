@@ -2,57 +2,45 @@
 
 Photobox is a local photo-booth daemon with a browser-based capture screen.
 
-## Run
+## Choose a setup path
 
-Install the package and prepare the one-time setup PIN:
+- **Try Photobox on this computer:** install it, initialize a local setup PIN, and start the daemon. The computer and phone must already share a network. This does not configure a Pi hotspot.
+- **Set up a Raspberry Pi:** download the generic image, create a private image for that Pi on a Linux computer, then flash it to a microSD card. Follow [First Boot and Pairing](docs/first-boot-and-pairing.md) for the full walkthrough.
+
+## Run on this computer
+
+Use Python 3.11 or newer. From the project directory, install Photobox and initialize its one-time administrator PIN:
 
 ```sh
-python -m pip install .
+python3 -m pip install .
 photobox-setup-pin
 ```
 
-The setup command prints a random 6-digit PIN once and stores only its hash in the configured data directory. Keep the PIN private; the first successful admin claim consumes it. This initializes an already-installed host. It does not build a per-device OS image or configure Wi-Fi.
+Record the 6-digit PIN when it is printed; it is shown only once. The command stores a hash under `PHOTOBOX_DATA_DIR` (default: `~/photobox`) and refuses to initialize a data directory that already has a PIN. If you set a custom `PHOTOBOX_DATA_DIR`, use the same value for both the setup command and daemon.
 
-To prepare a private per-device credential bundle:
-
-```sh
-photobox-provision --output-dir "$HOME/photobox-device-setup"
-```
-
-This prints the device’s SSID, Wi-Fi password, and setup PIN once; it writes `device.json` and a Wi-Fi join QR. On Linux, the output directory and files are restricted to the owner. **Without `--base-image`, it does not create or modify a bootable image, configure a hotspot, or connect a Pi to Wi-Fi yet.** Keep the output directory private and out of Git/shared CI artifacts.
-
-To put the credentials into the generic minimal Raspberry Pi OS image built by CI, run the provisioner on Linux:
-
-```sh
-photobox-provision --base-image photobox.img.xz --wifi-country GB \
-  --output-dir "$HOME/photobox-device-setup"
-```
-
-Replace `GB` with the two-letter ISO country code where the Pi will operate. The command writes `photobox-device.img` beside the private credential bundle. It requires `losetup`, `lsblk`, `udevadm`, `mount`, and `install`; it may prompt for `sudo` to update the image. The image contains the PIN hash, a NetworkManager setup hotspot profile, and Wi-Fi settings, not the setup PIN.
-
-On the provisioned image, the admin page can connect the Pi to venue WPA-Personal Wi-Fi. NetworkManager retains the setup hotspot if connection fails, and automatically retries a saved venue connection after reboot. The daemon uses NetworkManager D-Bus with a PolicyKit rule limited to network control and system connection changes; credentials are not passed as command-line arguments. These network flows still need physical Pi validation.
-
-You can still use the bundle’s setup-PIN hash on an already-installed host by setting `PHOTOBOX_DEVICE_CONFIG` to the private `device.json` path when starting `photobox`. The daemon validates that the file is owner-only and uses its PIN hash for first-admin claim. Live Wi-Fi management is only enabled on the provisioned Pi image.
-
-Start the service:
+Connect a V4L2-compatible webcam and install the system `ffmpeg` executable for camera capture, or run without a camera using the mock driver:
 
 ```sh
 photobox
+# Or, without a camera:
+PHOTOBOX_CAMERA=mock photobox
 ```
 
-Open `http://localhost:8000` from a browser that can reach the host and enter the setup PIN. By default, the daemon captures from `/dev/video0` using the system `ffmpeg` executable. Install `ffmpeg` on the host and connect a V4L2-compatible webcam before starting the service.
+Open `http://localhost:8000` on the same computer, or use the computer's reachable network address from another device. Enter the setup PIN to claim administrator access. The local-host path does not create a Wi-Fi hotspot or manage Wi-Fi; the phone or laptop must already be on a network that can reach the computer.
+
+## Raspberry Pi image
+
+The generic Raspberry Pi OS image is built by the `Build Raspberry Pi image` GitHub Actions workflow. Download its `photobox-raspios-arm64` artifact from a workflow run, or use the `.img.xz` and `SHA256SUMS` assets attached to an alpha, beta, or release-candidate prerelease. Verify the checksum before provisioning. The generic image has no per-device Wi-Fi password or setup PIN; provisioning creates those locally and inserts only the PIN hash into the image.
+
+Provisioning requires Linux, the project installed on the provisioning computer, and the image tools `losetup`, `lsblk`, `udevadm`, `mount`, and `install`. See the linked first-boot guide for the full commands, required country code, SD-card flashing, and first administrator claim. Do not share the per-device image or credential bundle: they contain that Pi's Wi-Fi credentials.
+
+On the provisioned Pi, an administrator can configure WPA-Personal venue Wi-Fi from the admin page. If connection fails, the setup hotspot remains available; a saved venue connection is retried after reboot. Enterprise Wi-Fi and captive-portal sign-in are not supported. These image and network paths still need physical Pi validation.
+
+An installed host can also use the setup-PIN hash from a private provisioning bundle by setting `PHOTOBOX_DEVICE_CONFIG` to its `device.json` path when starting Photobox. The file must remain owner-only. This does not enable hotspot or live Wi-Fi management on that host.
 
 For generic DSLR still capture through libgphoto2, set the camera to capture JPEG and set `PHOTOBOX_CAMERA=gphoto2`. The app uses the configured V4L2 webcam for preview and as a capture fallback when available. This initial adapter does not claim DSLR live preview. Exact camera-model compatibility has not been physically validated.
 
 The public `/api/cameras` status endpoint reports registered camera IDs, assigned preview/capture roles, capabilities, and current availability. If no capture camera is available, the booth remains up for setup but refuses to start a photo session.
-
-For development without a camera, run with the mock driver:
-
-```sh
-PHOTOBOX_CAMERA=mock photobox
-```
-
-The pairing PIN must still be initialized with `photobox-setup-pin` first. The Pi hotspot and NetworkManager integration require the provisioned Pi image; on a development host, the phone or laptop must already be on a network that can reach the daemon.
 
 ## Configuration
 

@@ -6,15 +6,13 @@ Maintainers: the physical acceptance procedure is in [Milestone 2 Hardware Valid
 
 This guide is for someone setting up a Photobox without needing to know Linux networking or security terminology. It explains what the computer creates, what to put on the Pi, and what the different codes are for.
 
-## The short version
+## Choose a setup path
 
-1. Download the generic minimal Raspberry Pi OS image artifact from the image-build workflow.
-2. On Linux, use the local image-provisioning tool to make a copy for one specific Pi. It creates that Pi’s Wi-Fi details and one-time setup PIN.
-3. Write the per-Pi image to a microSD card and put it in that Pi.
-4. Join the visible Wi-Fi network created by the Pi using the Wi-Fi QR code or the printed details.
-5. Open the local Photobox page and enter the setup PIN to claim the booth as its first administrator.
-6. Connect the Pi to venue Wi-Fi if available. The setup network turns off once venue Wi-Fi works; if it cannot connect, the Pi network remains available.
-7. From the admin phone, create a separate guest invitation QR. Guests join a network that can reach the Pi, then scan the invitation.
+**Already have Photobox running on a computer?** Use the [local-host steps](#available-now-local-pairing-on-an-installed-host). The computer and phone must already be on a network that can reach each other. This path does not create a hotspot.
+
+**Setting up a Raspberry Pi?** Continue with [Prepare one Pi](#prepare-one-pi). You need a Linux computer to provision the image, a microSD card and reader, a way to flash an image, the Wi-Fi country code for the Pi's location, and the credentials for an optional venue Wi-Fi network. The first-boot and network features are implemented but have not yet passed physical hardware validation; use a test Pi, disposable card, and isolated network.
+
+At a glance, the Pi path is: obtain and verify the generic image, create a private per-device image and credentials, flash that image, connect a phone to the Pi hotspot, claim admin access with the one-time PIN, and optionally configure venue Wi-Fi. Guest invitation is a separate step after admin setup.
 
 These are two different operations: **joining Wi-Fi connects a device to the Pi’s network; accepting an invitation gives that device guest access to Photobox.**
 
@@ -44,11 +42,54 @@ Do not combine these codes or post them in a public place. A hidden Wi-Fi name w
 
 ## Prepare one Pi
 
-1. Download the generic `.img.xz` from a Photobox alpha, beta, or release-candidate prerelease. It contains the minimal Raspberry Pi OS base and Photobox software, but no per-device credentials. It is for controlled hardware testing and has not been validated on physical Pi hardware.
-2. On a trusted Linux computer, run `photobox-provision --base-image <image.img.xz> --wifi-country <ISO-country-code> --output-dir <new-private-directory>` for the Pi you are preparing. Use the country where the Pi will operate. It creates a **per-device `.img` image**, a visible unique Wi-Fi name, a random Wi-Fi password, and a unique one-time 6-digit setup PIN. The tool displays the PIN once; write it down and keep it private. It requires loop-device and mount tools and may ask for `sudo`. Follow the tool’s instructions for saving or printing the Wi-Fi join code.
-3. Keep the per-device image and codes together only while preparing that Pi. Do not commit them to Git, upload them to a shared CI artifact, or paste them into a public issue or chat. The Wi-Fi password, setup PIN, and guest invitation are different secrets.
-4. Write the per-device image to the Pi’s microSD card with the operating-system imaging tool recommended by the project. **Writing an image erases the selected card.** Double-check the selected drive before confirming.
-5. Put the card in the Pi, connect the camera and power, then start the Pi. The setup network has a visible name so it is easy to find; hiding it would not prevent discovery or unauthorized access.
+### 1. Get the generic image
+
+The image is a minimal 64-bit Raspberry Pi OS image with Photobox installed. It is generic: it does not yet contain the Wi-Fi credentials or setup PIN for your device.
+
+- For an alpha, beta, or release-candidate build, download the `.img.xz` image and `SHA256SUMS` from that GitHub prerelease.
+- For a workflow build, open the repository's **Actions** tab, select a successful **Build Raspberry Pi image** run, and download its `photobox-raspios-arm64` artifact. GitHub downloads this artifact as a ZIP; extract it before continuing. The artifact is retained for 30 days.
+
+Keep the image and checksum file in the same directory. From that directory, verify the download before using it:
+
+```sh
+sha256sum --check SHA256SUMS
+xz --test photobox*.img.xz
+```
+
+The checksum command should report `OK`; the archive test should exit without an error. If the artifact has a different image filename, use that exact filename in the `xz` command. Do not continue if verification fails.
+
+### 2. Install the provisioning tool
+
+On the trusted Linux computer that will prepare the card, install Photobox from the project checkout. Python 3.11 or newer is required:
+
+```sh
+python3 -m pip install .
+```
+
+The computer must also have `losetup`, `lsblk`, `udevadm`, `mount`, and `install`. Image setup uses loop devices and mounts the image filesystem; the command may ask for `sudo` permission. Run this from the Photobox project directory. Keep the computer and its terminal private while the PIN and Wi-Fi password are displayed.
+
+### 3. Create per-device credentials and image
+
+Choose a new, empty output directory for this Pi. The provisioner will not overwrite files in a non-empty directory. Replace the image path with the downloaded `.img.xz`, and replace `GB` with the two-letter ISO country code where the Pi will operate:
+
+```sh
+photobox-provision \
+	--base-image "$HOME/Downloads/photobox.img.xz" \
+	--wifi-country GB \
+	--output-dir "$HOME/photobox-device-setup"
+```
+
+The command creates `photobox-device.img`, `device.json`, and `wifi-join.png` in that directory. It prints the device's Wi-Fi name, Wi-Fi password, and one-time 6-digit setup PIN. Save the PIN privately; it cannot be displayed again. The image contains the PIN hash, not the PIN itself. The command also makes the output directory and files owner-only on Linux.
+
+Do not omit `--base-image`: without it, the command only creates a credential bundle and does not produce a bootable image. Do not omit `--wifi-country` when building an image. If provisioning fails after creating files, preserve any useful error details but start again with a different empty output directory rather than mixing credentials from attempts.
+
+Keep the image and credential bundle private. Do not commit them, attach them to a public issue, put them in shared CI artifacts, or paste the printed secrets into a chat. The Wi-Fi QR is for joining the Pi's network; the setup PIN is for the first admin claim.
+
+### 4. Flash the image and boot
+
+Install [Raspberry Pi Imager](https://www.raspberrypi.com/software/) or use another image writer that supports a custom image. In Imager, choose **Use custom** and select `photobox-device.img` in the private output directory, then select the intended microSD card. **Writing the image erases the selected card. Confirm the card's device and capacity before starting.** Do not add a separate Wi-Fi configuration in the imaging tool; the per-device image already includes the setup hotspot configuration.
+
+When writing finishes, eject the card safely, put it in the Pi, connect the camera, and power on. The Pi advertises the unique visible Wi-Fi name printed by the provisioner. The image advertises `photobox.local` on supported local networks; while connected directly to the setup hotspot, `10.42.0.1` is the fallback address.
 
 The image contains the PIN hash and Wi-Fi settings in a Photobox-service-owned, mode-0600 configuration file, plus a root-owned NetworkManager setup profile. The Wi-Fi country is applied before NetworkManager starts. The image advertises the hostname `photobox.local`; a direct setup-hotspot address remains available if a phone does not resolve it.
 
@@ -57,7 +98,7 @@ The image contains the PIN hash and Wi-Fi settings in a Photobox-service-owned, 
 1. On a phone or laptop, scan the Wi-Fi join code or select the printed network name and enter its password. The setup network may say “No internet”; that is expected while connected directly to the Pi. Choose to remain connected.
 2. Open `http://photobox.local:8000`. If the phone cannot resolve that name while connected to the setup hotspot, use `http://10.42.0.1:8000`.
 3. Enter the one-time setup PIN from the provisioning step. The first successful claim makes this browser the booth administrator. The PIN is then invalid and cannot be reused.
-4. Confirm the camera and storage status. The admin page is separate from the guest controller.
+4. Confirm the camera and storage status. If the camera is unavailable, the service should still be reachable for setup, but photo sessions cannot start until a supported camera is available. The admin page is separate from the guest controller.
 
 The Pi stores only a hash of the setup PIN. Failed claims are rate-limited. Never send the PIN as part of a URL or guest QR code.
 
@@ -85,9 +126,7 @@ An operator may configure a local transparent PNG overlay for each strip photo s
 
 ## If the setup PIN is lost
 
-The PIN cannot be retrieved from the Pi because only its hash is stored. Use local administrative access, such as the documented SSH recovery command, to generate a replacement or reprovision the Pi. A remote guest invitation cannot reset or reveal the administrator PIN.
-
-Do not improvise a factory reset or delete the data directory: recovery commands must be documented and tested before this section is considered complete. Back up photos before reprovisioning; writing an image erases the selected microSD card.
+The PIN cannot be retrieved from the Pi because only its hash is stored. A remote guest invitation cannot reset or reveal it. The current image disables SSH, and there is no documented, tested PIN recovery procedure. Do not delete files or try an unverified reset command. Preserve the microSD card and photos, then ask the project maintainer for a recovery procedure before making changes. Reflashing an image erases the selected card and may erase photos and other data stored on it.
 
 ## If setup does not work
 
