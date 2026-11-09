@@ -9,6 +9,7 @@ on:
       - "image/**"
       - "pyproject.toml"
       - "src/**"
+      - "tools/**"
 
 permissions:
   contents: read
@@ -53,6 +54,7 @@ jobs:
             pi-gen/photobox/00-photobox/00-run.sh
           chmod +x pi-gen/photobox/00-photobox/00-run.sh
           cp image/photobox-stage/00-photobox/files/photobox.service \
+            image/photobox-stage/00-photobox/files/photobox-first-boot.service \
             image/photobox-stage/00-photobox/files/photobox-regulatory-domain.service \
             image/photobox-stage/00-photobox/files/50-photobox-network.rules \
             pi-gen/photobox/00-photobox/files/
@@ -89,8 +91,72 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: photobox-raspios-arm64
+          name: photobox-image-build
           path: pi-gen/deploy/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  executables:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            name: photobox-setup-windows-x64
+            file: photobox-setup-windows-x64.exe
+          - runner: ubuntu-22.04
+            name: photobox-setup-linux-x64
+            file: photobox-setup-linux-x64
+          - runner: macos-15
+            name: photobox-setup-macos-arm64
+            file: photobox-setup-macos-arm64
+          - runner: macos-15-intel
+            name: photobox-setup-macos-x64
+            file: photobox-setup-macos-x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build standalone executable
+        shell: bash
+        run: |
+          python -m pip install 'pyinstaller>=6,<7' 'qrcode>=8,<9'
+          python -m PyInstaller --onefile --name '${{ matrix.name }}' --paths src \
+            --copy-metadata qrcode --distpath standalone tools/provisioner_entry.py
+          python tools/smoke_provisioner.py 'standalone/${{ matrix.file }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: provisioner-${{ matrix.name }}
+          path: standalone/${{ matrix.file }}
+          if-no-files-found: error
+          retention-days: 30
+
+  package:
+    needs: [build, executables]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: photobox-image-build
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: provisioner-*
+          path: dist
+          merge-multiple: true
+      - name: Verify and checksum release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum --check SHA256SUMS)
+          (cd dist && sha256sum *.img.xz *.pyz photobox-setup-* > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: photobox-raspios-arm64
+          path: dist/*
           if-no-files-found: error
           compression-level: 0
           retention-days: 30

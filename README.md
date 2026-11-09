@@ -5,7 +5,7 @@ Photobox is a local photo-booth daemon with a browser-based capture screen.
 ## Choose a setup path
 
 - **Try Photobox on this computer:** install it, initialize a local setup PIN, and start the daemon. The computer and phone must already share a network. This does not configure a Pi hotspot.
-- **Set up a Raspberry Pi:** download the generic image, create a private image for that Pi on a Linux computer, then flash it to a microSD card. Follow [First Boot and Pairing](docs/first-boot-and-pairing.md) for the full walkthrough.
+- **Set up a Raspberry Pi:** flash the generic image and copy a per-device setup file to the card from Windows, macOS, or Linux. Follow [First Boot and Pairing](docs/first-boot-and-pairing.md) for the full walkthrough.
 
 ## Run on this computer
 
@@ -30,13 +30,13 @@ Open `http://localhost:8000` on the same computer, or use the computer's reachab
 
 ## Raspberry Pi image
 
-The generic Raspberry Pi OS image is built by the `Build Raspberry Pi image` GitHub Actions workflow. Download its `photobox-raspios-arm64` artifact from a workflow run, or use the `.img.xz`, `photobox-provision.pyz`, and `SHA256SUMS` assets attached to an alpha, beta, or release-candidate prerelease. Verify the checksum before provisioning. The generic image has no per-device Wi-Fi password or setup PIN; provisioning creates those locally and inserts only the PIN hash into the image.
+The generic Raspberry Pi OS image is built by the `Build Raspberry Pi image` GitHub Actions workflow. Download its `photobox-raspios-arm64` artifact from a workflow run, or download the `.img.xz`, your platform's `photobox-setup-*` executable, and `SHA256SUMS` from an alpha, beta, or release-candidate prerelease. Use files from the same build. The generic image has no per-device Wi-Fi password or setup PIN; the tool generates them locally.
 
-Provisioning requires Linux, Python 3.11 or newer, and the image tools `losetup`, `lsblk`, `udevadm`, `mount`, and `install`. The release's self-contained `photobox-provision.pyz` tool needs no Photobox source checkout, package installation, or virtual environment. See the linked first-boot guide for the full commands, required country code, SD-card flashing, and first administrator claim. Do not share the per-device image or credential bundle: they contain that Pi's Wi-Fi credentials.
+The standalone executable needs no Python installation, source checkout, virtual environment, or image-mount tools. It automatically verifies the image and itself against `SHA256SUMS` and stops on a mismatch. Copy its generated `photobox-device.json` to the flashed card. On first boot, the Pi imports it and removes the boot-partition copy. The file contains the Wi-Fi password, so keep the card and credential bundle private; deletion does not guarantee secure erasure. Older images without the first-boot importer do not support this method.
 
 On the provisioned Pi, an administrator can configure WPA-Personal venue Wi-Fi from the admin page. If connection fails, the setup hotspot remains available; a saved venue connection is retried after reboot. Enterprise Wi-Fi and captive-portal sign-in are not supported. These image and network paths still need physical Pi validation.
 
-An installed host can also use the setup-PIN hash from a private provisioning bundle by setting `PHOTOBOX_DEVICE_CONFIG` to its `device.json` path when starting Photobox. The file must remain owner-only. This does not enable hotspot or live Wi-Fi management on that host.
+An installed host can also use the setup-PIN hash from a private provisioning bundle by setting `PHOTOBOX_DEVICE_CONFIG` to its `photobox-device.json` path when starting Photobox. The file must remain owner-only. This does not enable hotspot or live Wi-Fi management on that host.
 
 For generic DSLR still capture through libgphoto2, set the camera to capture JPEG and set `PHOTOBOX_CAMERA=gphoto2`. The app uses the configured V4L2 webcam for preview and as a capture fallback when available. This initial adapter does not claim DSLR live preview. Exact camera-model compatibility has not been physically validated.
 

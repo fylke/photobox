@@ -29,9 +29,9 @@ Before testing, record the test ID, date, tester, Pi model, OS/image version and
 ### A. Provision and first boot
 
 - [ ] Build/test the generic base image in CI; record its artifact checksum.
-- [ ] On the trusted provisioning computer, create a per-device image. Confirm it displays a unique 6-digit PIN once, creates a visible unique SSID and random Wi-Fi password, and does not send those secrets to CI or ordinary logs.
-- [ ] Verify a second initialization attempt is refused. Verify the setup PIN is not stored in plaintext in the generated image/configuration.
-- [ ] Flash the per-device image to the disposable SD card and boot the Pi. Confirm the SSID is visible and the advertised Wi-Fi join QR contains only Wi-Fi credentials.
+- [ ] On the trusted provisioning computer, generate a per-device credential bundle with the Wi-Fi country. Confirm it displays a unique 6-digit PIN once, creates a visible unique SSID and random Wi-Fi password, and does not send those secrets to CI or ordinary logs.
+- [ ] Verify a second initialization attempt is refused. Verify the setup PIN is not stored in plaintext in the generated configuration.
+- [ ] Flash the matching generic image to the disposable SD card, copy the configuration as `photobox-device.json` to the boot partition, and boot the Pi. Confirm the file is consumed, the SSID is visible, and the Wi-Fi join QR contains only Wi-Fi credentials.
 - [ ] Join from phone A. Confirm the phone can reach the local status page while it reports “no internet”; confirm the URL contains no PIN or Wi-Fi password.
 
 ### B. Claim admin and configure network
@@ -80,4 +80,4 @@ Failed steps and issue links:
 Sanitized logs or screenshots:
 ```
 
-Remove secrets and guest-identifying content before attaching evidence to an issue or pull request. Keep the report with the release/implementation record; never commit the per-device image, setup PIN, Wi-Fi credentials, invitation token, or session photos.
+Remove secrets and guest-identifying content before attaching evidence to an issue or pull request. Keep the report with the release/implementation record; never commit the credential bundle, setup PIN, Wi-Fi credentials, invitation token, or session photos.

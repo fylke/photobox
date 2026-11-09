@@ -1,6 +1,7 @@
 [Unit]
 Description=Photobox photo booth daemon
-After=NetworkManager.service network.target
+Wants=photobox-first-boot.service
+After=photobox-first-boot.service NetworkManager.service network.target
 
 [Service]
 Type=simple

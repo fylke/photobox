@@ -73,7 +73,7 @@ def test_device_bundle_contains_private_manifest_and_wifi_qr(monkeypatch, tmp_pa
     pin_match = re.search(r"Setup PIN: ([0-9]{6})", output)
     assert pin_match is not None
     pin = pin_match.group(1)
-    manifest_path = output_dir / "device.json"
+    manifest_path = output_dir / "photobox-device.json"
     wifi_qr_path = output_dir / "wifi-join.svg"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
@@ -276,7 +276,7 @@ def test_generated_device_bundle_can_claim_admin_on_installed_host(tmp_path, cap
     client = TestClient(
         create_app(
             storage_dir=tmp_path / "runtime",
-            device_config_path=bundle_dir / "device.json",
+            device_config_path=bundle_dir / "photobox-device.json",
         )
     )
 

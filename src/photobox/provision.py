@@ -1,4 +1,6 @@
 import argparse
+import hashlib
+import hmac
 import json
 import lzma
 import os
@@ -78,6 +80,41 @@ def main() -> None:
     print("This command stores only a hash. The PIN is consumed when the first admin claims the booth.")
 
 
+def verify_file_checksum(file_path: Path, checksums_path: Path) -> None:
+    entries = []
+    for line in checksums_path.read_text(encoding="utf-8").splitlines():
+        match = re.fullmatch(r"([0-9a-fA-F]{64}) [ *](.+)", line)
+        if match is None:
+            raise ValueError("Invalid SHA256SUMS entry")
+        if match.group(2) == file_path.name:
+            entries.append(match.group(1).lower())
+    if len(entries) != 1:
+        raise ValueError(f"SHA256SUMS must contain exactly one entry for {file_path.name}")
+    with file_path.open("rb") as source:
+        actual = hashlib.file_digest(source, "sha256").hexdigest()
+    if not hmac.compare_digest(actual, entries[0]):
+        raise ValueError(f"SHA-256 mismatch for {file_path.name}")
+
+
+def verify_standalone_download(executable_path: Path) -> None:
+    directory = executable_path.resolve().parent
+    checksums_path = directory / "SHA256SUMS"
+    images = []
+    for line in checksums_path.read_text(encoding="utf-8").splitlines():
+        match = re.fullmatch(r"([0-9a-fA-F]{64}) [ *](.+)", line)
+        if match is None:
+            raise ValueError("Invalid SHA256SUMS entry")
+        name = match.group(2)
+        if name.endswith(".img.xz"):
+            if Path(name).name != name or "\\" in name:
+                raise ValueError("Invalid image filename in SHA256SUMS")
+            images.append(name)
+    if len(images) != 1:
+        raise ValueError("SHA256SUMS must contain exactly one generic image")
+    verify_file_checksum(directory / images[0], checksums_path)
+    verify_file_checksum(executable_path, checksums_path)
+
+
 def provision_device(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Create private, per-device Photobox credentials and optionally provision an image."
@@ -99,11 +136,51 @@ def provision_device(argv: list[str] | None = None) -> None:
         "--wifi-country",
         help="two-letter ISO country code for the Pi Wi-Fi regulatory domain (required with --base-image)",
     )
+    parser.add_argument(
+        "--verify-image",
+        type=Path,
+        help="downloaded generic image to verify before generating credentials",
+    )
+    parser.add_argument(
+        "--checksums",
+        type=Path,
+        help="SHA256SUMS file for --verify-image and the standalone tool",
+    )
     args = parser.parse_args(argv)
+    if (args.verify_image is None) != (args.checksums is None):
+        parser.error("--verify-image and --checksums must be provided together.")
+    if args.base_image is not None and args.verify_image is not None and (
+        args.base_image.expanduser().resolve() != args.verify_image.expanduser().resolve()
+    ):
+        parser.error("--verify-image must refer to the same file as --base-image.")
+    if getattr(sys, "frozen", False):
+        if args.verify_image is not None:
+            parser.error("The standalone tool verifies the adjacent image automatically.")
+        try:
+            verify_standalone_download(Path(sys.executable))
+        except (OSError, UnicodeError, ValueError) as error:
+            print(f"Download verification failed: {error}", file=sys.stderr)
+            raise SystemExit(1) from error
+    elif args.verify_image is not None:
+        try:
+            verify_file_checksum(args.verify_image.expanduser(), args.checksums.expanduser())
+            tool_path = Path(sys.argv[0])
+            if tool_path.suffix.lower() == ".pyz":
+                verify_file_checksum(tool_path, args.checksums.expanduser())
+        except (OSError, UnicodeError, ValueError) as error:
+            print(f"Checksum verification failed: {error}", file=sys.stderr)
+            raise SystemExit(1) from error
+        print(f"SHA-256 verified: {args.verify_image.name}")
+        if tool_path.suffix.lower() == ".pyz":
+            print(f"SHA-256 verified: {tool_path.name}")
+    else:
+        print("Warning: no image checksum verification requested.", file=sys.stderr)
     if args.base_image is not None and (
         args.wifi_country is None or not re.fullmatch(r"[A-Za-z]{2}", args.wifi_country)
     ):
         parser.error("--base-image requires --wifi-country with a two-letter ISO country code.")
+    if args.wifi_country is not None and not re.fullmatch(r"[A-Za-z]{2}", args.wifi_country):
+        parser.error("--wifi-country must be a two-letter ISO country code.")
     wifi_country = args.wifi_country.upper() if args.wifi_country else None
     output_dir = args.output_dir.expanduser()
     if output_dir.is_symlink():
@@ -112,6 +189,12 @@ def provision_device(argv: list[str] | None = None) -> None:
     if output_dir.exists() and any(output_dir.iterdir()):
         print("Provisioning output directory is not empty; refusing to overwrite files.", file=sys.stderr)
         raise SystemExit(1)
+    if args.base_image is not None:
+        try:
+            _run_as_root(["true"])
+        except RuntimeError as error:
+            print(f"Could not verify image provisioning permissions: {error}", file=sys.stderr)
+            raise SystemExit(1) from error
 
     device_id = secrets.token_hex(4).upper()
     setup_pin = generate_setup_pin()
@@ -138,7 +221,7 @@ def provision_device(argv: list[str] | None = None) -> None:
     output_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(output_dir, 0o700)
     _write_private_file(
-        output_dir / "device.json",
+        output_dir / "photobox-device.json",
         (json.dumps(manifest, indent=2) + "\n").encode("utf-8"),
     )
     _write_private_file(output_dir / "wifi-join.svg", qr_buffer.getvalue())
@@ -163,7 +246,9 @@ def provision_device(argv: list[str] | None = None) -> None:
     print(f"Setup PIN: {setup_pin}")
     print(f"Private config and Wi-Fi QR: {output_dir}")
     if args.base_image is None:
-        print("No bootable image was created; provide --base-image to provision one.")
+        print("No bootable image was created. Copy photobox-device.json to the flashed card.")
+        if wifi_country is None:
+            print("A --wifi-country is required for first-boot provisioning.")
     else:
         print(f"Per-device image: {image}")
         print("The image contains the setup PIN hash and Wi-Fi settings, not the setup PIN.")
@@ -210,7 +295,7 @@ def _create_device_image(
         with tempfile.TemporaryDirectory(prefix="photobox-image-") as mount_dir:
             _run_as_root(["mount", root_partitions[0], mount_dir])
             mounted = True
-            config_path = output_dir / "device.json"
+            config_path = output_dir / "photobox-device.json"
             env_path = Path(mount_dir) / "photobox-device.env"
             wifi = manifest["wifi"]
             if not isinstance(wifi, dict) or not isinstance(wifi.get("country"), str):
@@ -301,7 +386,7 @@ def _create_device_image(
             _run_as_root(
                 [
                     "ln",
-                    "-s",
+                    "-sf",
                     "/etc/systemd/system/photobox-regulatory-domain.service",
                     f"{mount_dir}/etc/systemd/system/multi-user.target.wants/photobox-regulatory-domain.service",
                 ]

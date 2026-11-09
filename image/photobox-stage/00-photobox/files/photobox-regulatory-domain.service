@@ -1,6 +1,9 @@
 [Unit]
 Description=Set Wi-Fi regulatory domain for Photobox
+Wants=photobox-first-boot.service
+After=photobox-first-boot.service
 Before=NetworkManager.service
+ConditionPathExists=/etc/photobox/device.env
 
 [Service]
 Type=oneshot

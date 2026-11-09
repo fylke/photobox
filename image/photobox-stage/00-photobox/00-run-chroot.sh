@@ -10,3 +10,5 @@ chown root:photobox /etc/photobox
 chmod 0750 /etc/photobox
 mkdir -p /etc/systemd/system/multi-user.target.wants
 ln -s /etc/systemd/system/photobox.service /etc/systemd/system/multi-user.target.wants/photobox.service
+ln -s /etc/systemd/system/photobox-first-boot.service /etc/systemd/system/multi-user.target.wants/photobox-first-boot.service
+ln -s /etc/systemd/system/photobox-regulatory-domain.service /etc/systemd/system/multi-user.target.wants/photobox-regulatory-domain.service
