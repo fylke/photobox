@@ -28,11 +28,13 @@ Before testing, record the test ID, date, tester, Pi model, OS/image version and
 
 ### A. Provision and first boot
 
-- [ ] Build/test the generic base image in CI; record its artifact checksum.
-- [ ] On the trusted provisioning computer, generate a per-device credential bundle with the Wi-Fi country. Confirm it displays a unique 6-digit PIN once, creates a visible unique SSID and random Wi-Fi password, and does not send those secrets to CI or ordinary logs.
-- [ ] Verify a second initialization attempt is refused. Verify the setup PIN is not stored in plaintext in the generated configuration.
-- [ ] Flash the matching generic image to the disposable SD card, copy the configuration as `photobox-device.json` to the boot partition, and boot the Pi. Confirm the file is consumed, the SSID is visible, and the Wi-Fi join QR contains only Wi-Fi credentials.
-- [ ] Join from phone A. Confirm the phone can reach the local status page while it reports “no internet”; confirm the URL contains no PIN or Wi-Fi password.
+- [ ] Build the Imager catalogue and image in CI; record the image and extracted-image checksums.
+- [ ] In Raspberry Pi Imager, load the Photobox catalogue, select the supported Pi model and image, and set the correct Wi-Fi country in **Customisation > Localisation**. Confirm venue Wi-Fi and remote access are not required.
+- [ ] Flash and verify the image to the disposable SD card. Boot the Pi with no setup file on the boot partition.
+- [ ] Confirm the visible open **Photobox Setup** network starts only for an unconfigured device and the page is reachable at `10.42.0.1:8000`.
+- [ ] From phone A, claim the booth. Confirm credentials are unique, displayed only to the claimant, not included in URLs or ordinary logs, and persisted across a reboot.
+- [ ] Confirm another client cannot claim after the first claim. Confirm the temporary open network expires after 15 minutes and is removed when private Wi-Fi is activated.
+- [ ] Activate the private network, reconnect phone A, and verify administrator access survives the handoff.
 
 ### B. Claim admin and configure network
 
@@ -80,4 +82,4 @@ Failed steps and issue links:
 Sanitized logs or screenshots:
 ```
 
-Remove secrets and guest-identifying content before attaching evidence to an issue or pull request. Keep the report with the release/implementation record; never commit the credential bundle, setup PIN, Wi-Fi credentials, invitation token, or session photos.
+Remove secrets and guest-identifying content before attaching evidence to an issue or pull request. Keep the report with the release/implementation record; never commit setup PINs, Wi-Fi credentials, invitation tokens, or session photos.

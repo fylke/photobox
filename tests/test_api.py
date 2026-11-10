@@ -1,9 +1,6 @@
 import base64
-import json
-import os
 from io import BytesIO
 
-import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -34,6 +31,114 @@ class FakeNetworkManager:
             raise NetworkError("NetworkManager could not connect.")
         self.credentials = (ssid, password)
         return NetworkStatus(True, "venue", "Connected to venue Wi-Fi.", "192.168.1.25")
+
+
+class FakeBootstrapNetwork(FakeNetworkManager):
+    def __init__(self):
+        super().__init__()
+        self.activated = None
+
+    def status(self):
+        return NetworkStatus(True, "bootstrap", "Temporary setup.", "10.42.0.1")
+
+    def activate_private_hotspot(self, ssid, password):
+        self.activated = (ssid, password)
+
+    def disable_bootstrap(self):
+        pass
+
+    def recover_private_hotspot(self, ssid, password):
+        self.activated = (ssid, password)
+
+
+def test_bootstrap_claim_is_network_scoped_and_single_use(tmp_path):
+    network = FakeBootstrapNetwork()
+    app = create_app(storage_dir=tmp_path, network_manager=network, bootstrap_setup=True)
+    outsider = TestClient(app, base_url="http://10.42.0.1:8000", client=("192.168.1.10", 1234))
+    admin = TestClient(app, base_url="http://10.42.0.1:8000", client=("10.42.0.2", 1234))
+    assert outsider.post("/api/bootstrap/claim").status_code == 403
+    wrong_interface = TestClient(app, base_url="http://192.168.1.1:8000", client=("10.42.0.2", 1234))
+    assert wrong_interface.post("/api/bootstrap/claim").status_code == 403
+    result = admin.post("/api/bootstrap/claim")
+    assert result.status_code == 200
+    credentials = result.json()
+    assert credentials["ssid"].startswith("Photobox-")
+    assert len(credentials["password"]) >= 8
+    assert result.headers["cache-control"] == "no-store"
+    assert admin.get("/api/bootstrap/hotspot").json() == credentials
+    assert outsider.get("/api/bootstrap/hotspot").status_code == 401
+    assert admin.post("/api/bootstrap/claim").status_code == 409
+    assert admin.post("/api/bootstrap/activate").json() == {"status": "switching"}
+    assert network.activated == (credentials["ssid"], credentials["password"])
+
+
+def test_bootstrap_claim_is_disabled_for_existing_hosts(tmp_path):
+    client = TestClient(create_app(storage_dir=tmp_path, network_manager=FakeBootstrapNetwork()))
+    assert client.post("/api/bootstrap/claim").status_code == 403
+
+
+def test_bootstrap_timeout_disables_open_network(tmp_path, monkeypatch):
+    timers = []
+
+    class FakeTimer:
+        def __init__(self, delay, callback):
+            self.delay = delay
+            self.callback = callback
+            self.daemon = False
+            timers.append(self)
+
+        def start(self):
+            pass
+
+        def cancel(self):
+            pass
+
+    class Network(FakeBootstrapNetwork):
+        def disable_bootstrap(self):
+            self.disabled = True
+
+    monkeypatch.setattr("photobox.api.Timer", FakeTimer)
+    network = Network()
+    app = create_app(storage_dir=tmp_path, network_manager=network, bootstrap_setup=True)
+    with TestClient(app):
+        assert timers[0].delay == 15 * 60
+        timers[0].callback()
+        assert network.disabled
+
+
+def test_bootstrap_recovery_retries_after_network_failure(tmp_path, monkeypatch):
+    timers = []
+
+    class FakeTimer:
+        def __init__(self, delay, callback):
+            self.delay = delay
+            self.callback = callback
+            self.daemon = False
+            timers.append(self)
+
+        def start(self):
+            pass
+
+        def cancel(self):
+            pass
+
+    class Network(FakeBootstrapNetwork):
+        def recover_private_hotspot(self, ssid, password):
+            if self.activated is None:
+                self.activated = "failed"
+                raise NetworkError("temporary error")
+            self.activated = (ssid, password)
+
+    monkeypatch.setattr("photobox.api.Timer", FakeTimer)
+    network = Network()
+    app = create_app(storage_dir=tmp_path, network_manager=network, bootstrap_setup=True)
+    app.state.pairing_manager.claim_unconfigured_admin("Photobox-1234ABCD", "test_password123")
+    with TestClient(app):
+        assert timers[0].delay == 0
+        timers[0].callback()
+        assert timers[1].delay == 10
+        timers[1].callback()
+        assert network.activated == ("Photobox-1234ABCD", "test_password123")
 
 
 def paired_client(tmp_path, camera=None, network_manager=None, camera_registry=None):
@@ -530,56 +635,6 @@ def test_invalid_venue_wifi_credentials_are_rejected_before_network_change(tmp_p
 
     assert response.status_code == 422
     assert network.credentials is None
-
-
-@pytest.mark.skipif(os.name == "nt", reason="requires POSIX file permission bits")
-def test_private_device_manifest_configures_first_admin_claim(tmp_path):
-    device_config = tmp_path / "device.json"
-    device_config.write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "device_id": "A1B2C3D4",
-                "setup_pin_hash": hash_setup_pin(SETUP_PIN),
-                "wifi": {
-                    "ssid": "Photobox-A1B2C3D4",
-                    "password": "a-private-wifi-password",
-                    "hidden": False,
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    device_config.chmod(0o600)
-    client = TestClient(create_app(storage_dir=tmp_path, device_config_path=device_config))
-
-    assert client.get("/api/pairing/status").json() == {
-        "configured": True,
-        "claimed": False,
-    }
-    assert client.post("/api/pairing/claim", json={"pin": SETUP_PIN}).status_code == 200
-
-
-@pytest.mark.skipif(os.name == "nt", reason="requires POSIX file permission bits")
-def test_device_manifest_refuses_group_readable_secrets(tmp_path):
-    device_config = tmp_path / "device.json"
-    device_config.write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "setup_pin_hash": hash_setup_pin(SETUP_PIN),
-                "wifi": {
-                    "ssid": "Photobox-A1B2C3D4",
-                    "password": "a-private-wifi-password",
-                    "hidden": False,
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValueError, match="mode 0600"):
-        create_app(storage_dir=tmp_path, device_config_path=device_config)
 
 
 def test_admin_can_invite_guest_and_guest_cannot_create_invitation(tmp_path):

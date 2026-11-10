@@ -65,6 +65,8 @@
 
     section { padding: clamp(25px, 5vw, 48px); }
     .session { border-right: 1px solid var(--line); }
+    #pairing-main { grid-template-columns: minmax(0, 1fr); max-width: 640px; }
+    #pairing-main .session { border: 0; }
     .eyebrow {
       margin: 0 0 14px;
       color: var(--green);
@@ -160,6 +162,16 @@
       <h1 id="pairing-title">Connecting</h1>
       <p id="pairing-description" class="detail"></p>
       <p id="network-status" class="detail">Checking network status…</p>
+      <div id="bootstrap-setup" hidden>
+        <p>This setup network is open. Nearby people may observe or claim this booth. Do not enter venue Wi-Fi passwords here.</p>
+        <button id="bootstrap-claim" type="button">Set up this booth</button>
+        <div id="bootstrap-credentials" hidden>
+          <div class="field"><label for="bootstrap-ssid">Private Wi-Fi name</label><input id="bootstrap-ssid" readonly></div>
+          <div class="field"><label for="bootstrap-password">Private Wi-Fi password</label><input id="bootstrap-password" readonly></div>
+          <button id="bootstrap-activate" type="button">Start private Wi-Fi</button>
+          <p id="bootstrap-message" class="detail" aria-live="polite"></p>
+        </div>
+      </div>
       <form id="claim-form" hidden>
         <div class="field">
           <label for="setup-pin">One-time setup PIN</label>
@@ -274,6 +286,12 @@
     const pairingTitle = document.querySelector("#pairing-title");
     const pairingDescription = document.querySelector("#pairing-description");
     const claimForm = document.querySelector("#claim-form");
+    const bootstrapSetup = document.querySelector("#bootstrap-setup");
+    const bootstrapClaim = document.querySelector("#bootstrap-claim");
+    const bootstrapCredentials = document.querySelector("#bootstrap-credentials");
+    const bootstrapSsid = document.querySelector("#bootstrap-ssid");
+    const bootstrapPassword = document.querySelector("#bootstrap-password");
+    const bootstrapMessage = document.querySelector("#bootstrap-message");
     const adminInvitation = document.querySelector("#admin-invitation");
     const pairError = document.querySelector("#pair-error");
     const invitationResult = document.querySelector("#invitation-result");
@@ -301,6 +319,7 @@
     let busy = false;
     let currentRole = null;
     let cameraAvailable = true;
+    let networkMode = null;
 
     async function request(url, options) {
       const response = await fetch(url, options);
@@ -318,6 +337,7 @@
       pairingMain.hidden = false;
       captureMain.hidden = true;
       claimForm.hidden = mode !== "claim";
+      bootstrapSetup.hidden = mode !== "bootstrap";
       adminInvitation.hidden = mode !== "admin";
       pairError.hidden = true;
       invitationResult.hidden = true;
@@ -325,9 +345,12 @@
       invitationUrl.hidden = true;
       copyInvitation.hidden = true;
       invitationExpiry.textContent = "";
-      if (mode === "unconfigured") {
-        pairingTitle.textContent = "Booth needs setup";
-        pairingDescription.textContent = "This device has no provisioned setup PIN yet. Prepare a per-device image before claiming administrator access.";
+      if (mode === "bootstrap") {
+        pairingTitle.textContent = "Set up Photobox";
+        pairingDescription.textContent = "Claim this booth and create its private Wi-Fi network.";
+      } else if (mode === "unconfigured") {
+        pairingTitle.textContent = "Wi-Fi country required";
+        pairingDescription.textContent = "Set the correct country in Raspberry Pi Imager under Customisation > Localisation, then write the card again.";
       } else if (mode === "claim") {
         pairingTitle.textContent = "Claim this booth";
         pairingDescription.textContent = "Enter the one-time setup PIN created when this Pi was provisioned. This phone will become the administrator.";
@@ -386,6 +409,7 @@
     async function loadNetworkStatus() {
       try {
         const status = await request("/api/network/status");
+        networkMode = status.mode;
         networkStatus.textContent = status.message + (status.address ? ` Address: ${status.address}` : "");
         venueNetworkForm.hidden = !status.available || status.mode === "unavailable";
       } catch (error) {
@@ -623,6 +647,38 @@
       }
     });
 
+    function showBootstrapCredentials(credentials) {
+      bootstrapClaim.hidden = true;
+      bootstrapCredentials.hidden = false;
+      bootstrapSsid.value = credentials.ssid;
+      bootstrapPassword.value = credentials.password;
+    }
+
+    bootstrapClaim.addEventListener("click", async () => {
+      bootstrapClaim.disabled = true;
+      pairError.hidden = true;
+      try {
+        const credentials = await request("/api/bootstrap/claim", { method: "POST" });
+        currentRole = "admin";
+        showBootstrapCredentials(credentials);
+      } catch (error) {
+        pairError.textContent = error.message;
+        pairError.hidden = false;
+        bootstrapClaim.disabled = false;
+      }
+    });
+
+    document.querySelector("#bootstrap-activate").addEventListener("click", async (event) => {
+      event.currentTarget.disabled = true;
+      try {
+        await request("/api/bootstrap/activate", { method: "POST" });
+        bootstrapMessage.textContent = `Join the private Wi-Fi above, then reopen ${window.location.origin}.`;
+      } catch (error) {
+        bootstrapMessage.textContent = error.message;
+        event.currentTarget.disabled = false;
+      }
+    });
+
     document.querySelector("#create-invitation").addEventListener("click", async (event) => {
       const button = event.currentTarget;
       button.disabled = true;
@@ -798,7 +854,7 @@
 
         const status = await request("/api/pairing/status");
         if (!status.configured) {
-          showPairing("unconfigured");
+          showPairing(networkMode === "bootstrap" ? "bootstrap" : "unconfigured");
           return;
         }
         if (!status.claimed) {
@@ -816,6 +872,11 @@
             return;
           }
           if (currentRole === "admin") {
+            if (networkMode === "bootstrap") {
+              showPairing("bootstrap");
+              showBootstrapCredentials(await request("/api/bootstrap/hotspot"));
+              return;
+            }
             showPairing("admin");
             await loadGuestCredentials();
             return;

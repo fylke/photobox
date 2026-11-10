@@ -28,13 +28,6 @@ jobs:
       - name: Build Photobox wheel
         run: python -m pip wheel --no-deps --wheel-dir dist .
 
-      - name: Build standalone provisioning tool
-        run: |
-          python -m pip install --no-deps --target dist/provisioner-deps 'qrcode>=8,<9'
-          python tools/build_provisioner.py \
-            --qrcode-package dist/provisioner-deps/qrcode \
-            --output dist/photobox-provision.pyz
-
       - uses: actions/checkout@v4
         with:
           repository: RPi-Distro/pi-gen
@@ -86,8 +79,7 @@ jobs:
           test "${#images[@]}" -eq 1
           image="${images[0]}"
           xz --test "$image"
-          sudo install -m 0644 dist/photobox-provision.pyz pi-gen/deploy/
-          (cd pi-gen/deploy && sha256sum "$(basename "$image")" photobox-provision.pyz | sudo tee SHA256SUMS)
+          (cd pi-gen/deploy && sha256sum "$(basename "$image")" | sudo tee SHA256SUMS)
 
       - uses: actions/upload-artifact@v4
         with:
@@ -97,62 +89,20 @@ jobs:
           compression-level: 0
           retention-days: 30
 
-  executables:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-latest
-            name: photobox-setup-windows-x64
-            file: photobox-setup-windows-x64.exe
-          - runner: ubuntu-22.04
-            name: photobox-setup-linux-x64
-            file: photobox-setup-linux-x64
-          - runner: macos-15
-            name: photobox-setup-macos-arm64
-            file: photobox-setup-macos-arm64
-          - runner: macos-15-intel
-            name: photobox-setup-macos-x64
-            file: photobox-setup-macos-x64
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Build standalone executable
-        shell: bash
-        run: |
-          python -m pip install 'pyinstaller>=6,<7' 'qrcode>=8,<9'
-          python -m PyInstaller --onefile --name '${{ matrix.name }}' --paths src \
-            --copy-metadata qrcode --distpath standalone tools/provisioner_entry.py
-          python tools/smoke_provisioner.py 'standalone/${{ matrix.file }}'
-      - uses: actions/upload-artifact@v4
-        with:
-          name: provisioner-${{ matrix.name }}
-          path: standalone/${{ matrix.file }}
-          if-no-files-found: error
-          retention-days: 30
-
   package:
-    needs: [build, executables]
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: photobox-image-build
           path: dist
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: provisioner-*
-          path: dist
-          merge-multiple: true
       - name: Verify and checksum release files
         shell: bash
         run: |
           set -euo pipefail
           (cd dist && sha256sum --check SHA256SUMS)
-          (cd dist && sha256sum *.img.xz *.pyz photobox-setup-* > SHA256SUMS)
+          (cd dist && sha256sum *.img.xz > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: photobox-raspios-arm64

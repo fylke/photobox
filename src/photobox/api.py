@@ -1,11 +1,13 @@
 import base64
+import ipaddress
 import json
 import os
+import secrets
 import time
 from importlib.resources import files
 from io import BytesIO
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock, Timer
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -29,7 +31,6 @@ from photobox.pairing import (
     PairingRateLimited,
     Principal,
 )
-from photobox.provision import load_device_config
 from photobox.session import InvalidTransition, SessionConflict, SessionManager
 from photobox.storage import LocalStorage
 
@@ -64,20 +65,15 @@ def create_app(
     camera: Camera | None = None,
     storage_dir: Path | None = None,
     setup_pin_hash: str | None = None,
-    device_config_path: Path | None = None,
     network_manager: NetworkManager | None = None,
     camera_registry: CameraRegistry | None = None,
     strip_overlay_path: Path | None = None,
+    bootstrap_setup: bool = False,
 ) -> FastAPI:
     app = FastAPI(title="Photobox", version="0.1.0")
-    if setup_pin_hash is not None and device_config_path is not None:
-        raise ValueError("Choose either setup_pin_hash or device_config_path, not both")
     if camera is not None and camera_registry is not None:
         raise ValueError("Choose either camera or camera_registry, not both")
     registry = camera_registry or CameraRegistry([camera if camera is not None else MockCamera()])
-    device_config = load_device_config(device_config_path) if device_config_path else None
-    if device_config is not None:
-        setup_pin_hash = str(device_config["setup_pin_hash"])
     data_dir = storage_dir or Path(os.environ.get("PHOTOBOX_DATA_DIR", "~/photobox"))
     storage = LocalStorage(data_dir, strip_overlay_path)
     camera_config_path = storage.root / "camera.json"
@@ -111,20 +107,52 @@ def create_app(
     pairing = PairingManager(storage.root / "pairing.sqlite3", setup_pin_hash)
     if network_manager is not None:
         network = network_manager
-    elif (
-        device_config is not None
-        and isinstance(device_config.get("wifi"), dict)
-        and device_config["wifi"].get("country") is not None
-    ):
+    elif bootstrap_setup:
         network = NetworkManagerAdapter()
     else:
         network = DisabledNetworkManager()
     app.state.session_manager = manager
     app.state.pairing_manager = pairing
-    app.state.device_config = device_config
     app.state.camera_registry = registry
     app.router.on_startup.append(registry.start_monitor)
     app.router.on_shutdown.append(registry.stop_monitor)
+    if bootstrap_setup:
+        bootstrap_lock = Lock()
+        bootstrap_stopped = Event()
+
+        def schedule_bootstrap_task(delay: int) -> None:
+            if bootstrap_stopped.is_set():
+                return
+            timer = Timer(delay, resume_or_expire_bootstrap)
+            timer.daemon = True
+            app.state.bootstrap_timer = timer
+            timer.start()
+
+        def resume_or_expire_bootstrap() -> None:
+            with bootstrap_lock:
+                if bootstrap_stopped.is_set():
+                    return
+                try:
+                    credentials = pairing.hotspot_credentials()
+                    if credentials is not None:
+                        network.recover_private_hotspot(*credentials)
+                    else:
+                        network.disable_bootstrap()
+                except NetworkError:
+                    schedule_bootstrap_task(10)
+
+        def start_bootstrap_timer() -> None:
+            delay = 0 if pairing.hotspot_credentials() is not None else 15 * 60
+            schedule_bootstrap_task(delay)
+
+        def stop_bootstrap_timer() -> None:
+            bootstrap_stopped.set()
+            timer = getattr(app.state, "bootstrap_timer", None)
+            if timer is not None:
+                timer.cancel()
+
+        app.router.on_startup.append(start_bootstrap_timer)
+        app.router.on_shutdown.append(stop_bootstrap_timer)
     screen_html = files("photobox").joinpath("static", "index.html").read_text(encoding="utf-8")
     controller_lock = Lock()
     gif_lock = Lock()
@@ -206,6 +234,64 @@ def create_app(
     @app.get("/api/network/status")
     def network_status() -> dict[str, bool | str | None]:
         return network.status().as_dict()
+
+    @app.post("/api/bootstrap/claim")
+    def claim_bootstrap(request: Request) -> JSONResponse:
+        validate_origin(request)
+        status = network.status()
+        try:
+            address = ipaddress.ip_address(status.address or "")
+            client_address = ipaddress.ip_address(request.client.host if request.client else "")
+            server_address = ipaddress.ip_address(request.scope["server"][0])
+            subnet = ipaddress.ip_network(f"{address}/24", strict=False)
+        except ValueError as error:
+            raise HTTPException(status_code=403, detail="Setup network required") from error
+        if (
+            not bootstrap_setup
+            or status.mode != "bootstrap"
+            or server_address != address
+            or client_address not in subnet
+        ):
+            raise HTTPException(status_code=403, detail="Setup network required")
+        ssid = "Photobox-" + secrets.token_hex(4).upper()
+        password = secrets.token_urlsafe(24)
+        try:
+            credential = pairing.claim_unconfigured_admin(ssid, password)
+        except PairingError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        response = JSONResponse({"ssid": ssid, "password": password})
+        response.headers["Cache-Control"] = "no-store"
+        set_credential_cookie(response, credential, request)
+        return response
+
+    @app.get("/api/bootstrap/hotspot")
+    def bootstrap_hotspot(request: Request) -> JSONResponse:
+        require_admin(request)
+        credentials = pairing.hotspot_credentials() if bootstrap_setup else None
+        if credentials is None:
+            raise HTTPException(status_code=404, detail="No first-boot hotspot")
+        response = JSONResponse({"ssid": credentials[0], "password": credentials[1]})
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.post("/api/bootstrap/activate")
+    def activate_bootstrap(request: Request, background_tasks: BackgroundTasks) -> dict[str, str]:
+        validate_origin(request)
+        require_admin(request)
+        credentials = pairing.hotspot_credentials() if bootstrap_setup else None
+        if credentials is None:
+            raise HTTPException(status_code=404, detail="No first-boot hotspot")
+        def activate() -> None:
+            with bootstrap_lock:
+                timer = getattr(app.state, "bootstrap_timer", None)
+                if timer is not None:
+                    timer.cancel()
+                try:
+                    network.activate_private_hotspot(*credentials)
+                except NetworkError:
+                    schedule_bootstrap_task(10)
+        background_tasks.add_task(activate)
+        return {"status": "switching"}
 
     @app.post("/api/network/venue")
     def configure_venue_network(
@@ -616,11 +702,7 @@ def create_app(
 app = create_app(
     camera_registry=camera_registry_from_environment(),
     setup_pin_hash=os.environ.get("PHOTOBOX_SETUP_PIN_HASH"),
-    device_config_path=(
-        Path(os.environ["PHOTOBOX_DEVICE_CONFIG"])
-        if os.environ.get("PHOTOBOX_DEVICE_CONFIG")
-        else None
-    ),
+    bootstrap_setup=os.environ.get("PHOTOBOX_BOOTSTRAP") == "1",
     strip_overlay_path=(
         Path(os.environ["PHOTOBOX_STRIP_OVERLAY"])
         if os.environ.get("PHOTOBOX_STRIP_OVERLAY")

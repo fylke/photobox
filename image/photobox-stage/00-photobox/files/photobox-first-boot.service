@@ -3,7 +3,6 @@ Description=Install Photobox first-boot configuration
 RequiresMountsFor=/boot/firmware
 After=local-fs.target
 Before=photobox-regulatory-domain.service NetworkManager.service photobox.service
-ConditionPathExists=/boot/firmware/photobox-device.json
 
 [Service]
 Type=oneshot

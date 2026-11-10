@@ -61,6 +61,19 @@ class PairingManagerTests(unittest.TestCase):
         self.assertNotIn(self.pin.encode(), database_bytes)
         self.assertNotIn(admin.token.encode(), database_bytes)
 
+    def test_unconfigured_claim_is_one_time_and_survives_restart(self):
+        database_path = self.directory / "unconfigured.sqlite3"
+        manager = PairingManager(database_path, None, clock=self.clock)
+        admin = manager.claim_unconfigured_admin("Photobox-1234ABCD", "test_password123")
+        self.assertEqual(manager.status(), {"configured": True, "claimed": True})
+        restarted = PairingManager(database_path, None, clock=self.clock)
+        self.assertEqual(restarted.authenticate(admin.token).role, "admin")
+        self.assertEqual(restarted.hotspot_credentials(), ("Photobox-1234ABCD", "test_password123"))
+        with self.assertRaises(PairingError):
+            restarted.claim_unconfigured_admin("another", "another-password")
+        with self.assertRaises(PairingError):
+            self.manager.claim_unconfigured_admin("another", "another-password")
+
     def test_reopening_with_a_different_setup_pin_hash_is_rejected(self):
         PairingManager(self.directory / "pairing.sqlite3", self.pin_hash)
 

@@ -240,6 +240,33 @@ class PairingManager:
             raise PairingError("Could not claim this booth")
         return issued
 
+    def claim_unconfigured_admin(self, ssid: str, password: str) -> IssuedCredential:
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            initialized = connection.execute(
+                "SELECT value FROM settings WHERE key = 'setup_initialized'"
+            ).fetchone()
+            if initialized is not None:
+                raise PairingError("Setup has already been initialized")
+            connection.execute(
+                "INSERT INTO settings (key, value) VALUES ('setup_initialized', '1')"
+            )
+            connection.executemany(
+                "INSERT INTO settings (key, value) VALUES (?, ?)",
+                (("hotspot_ssid", ssid), ("hotspot_password", password)),
+            )
+            return self._insert_credential(connection, "admin", None, self.clock())
+
+    def hotspot_credentials(self) -> tuple[str, str] | None:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT key, value FROM settings WHERE key IN ('hotspot_ssid', 'hotspot_password')"
+            ).fetchall()
+        values = {row["key"]: row["value"] for row in rows}
+        if "hotspot_ssid" not in values or "hotspot_password" not in values:
+            return None
+        return values["hotspot_ssid"], values["hotspot_password"]
+
     def _record_claim_failure(
         self,
         connection: sqlite3.Connection,

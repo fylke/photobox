@@ -18,6 +18,7 @@ _CONNECTION_INTERFACE = f"{_BUS_NAME}.Settings.Connection"
 _PROPERTIES_INTERFACE = "org.freedesktop.DBus.Properties"
 _WIFI_INTERFACE = "wlan0"
 _SETUP_CONNECTION_ID = "Photobox setup"
+_BOOTSTRAP_CONNECTION_ID = "Photobox first boot"
 _VENUE_CONNECTION_PREFIX = "Photobox venue "
 
 
@@ -46,12 +47,27 @@ class NetworkManager(Protocol):
 
     def configure_venue(self, ssid: str, password: str) -> NetworkStatus: ...
 
+    def activate_private_hotspot(self, ssid: str, password: str) -> None: ...
+
+    def recover_private_hotspot(self, ssid: str, password: str) -> None: ...
+
+    def disable_bootstrap(self) -> None: ...
+
 
 class DisabledNetworkManager:
     def status(self) -> NetworkStatus:
         return NetworkStatus(False, "disabled", "Network setup is not configured for this host.")
 
     def configure_venue(self, ssid: str, password: str) -> NetworkStatus:
+        raise NetworkError("Network setup is only available on a provisioned Photobox image.")
+
+    def activate_private_hotspot(self, ssid: str, password: str) -> None:
+        raise NetworkError("Network setup is only available on a provisioned Photobox image.")
+
+    def disable_bootstrap(self) -> None:
+        raise NetworkError("Network setup is only available on a provisioned Photobox image.")
+
+    def recover_private_hotspot(self, ssid: str, password: str) -> None:
         raise NetworkError("Network setup is only available on a provisioned Photobox image.")
 
 
@@ -79,6 +95,87 @@ class NetworkManagerAdapter:
                 "NetworkManager could not connect. Check the Wi-Fi details and signal; "
                 "the setup network should remain available."
             ) from error
+
+    def activate_private_hotspot(self, ssid: str, password: str) -> None:
+        validate_wifi_credentials(ssid, password)
+        try:
+            asyncio.run(self._activate_private_hotspot(ssid, password))
+        except (DBusError, OSError, TimeoutError) as error:
+            raise NetworkError("Could not activate the private Photobox network.") from error
+
+    def recover_private_hotspot(self, ssid: str, password: str) -> None:
+        validate_wifi_credentials(ssid, password)
+        try:
+            asyncio.run(self._activate_private_hotspot(ssid, password, recovery=True))
+        except (DBusError, OSError, TimeoutError) as error:
+            raise NetworkError("Could not recover the private Photobox network.") from error
+
+    def disable_bootstrap(self) -> None:
+        try:
+            asyncio.run(self._disable_bootstrap())
+        except (DBusError, OSError, TimeoutError) as error:
+            raise NetworkError("Could not disable the temporary setup network.") from error
+
+    async def _disable_bootstrap(self) -> None:
+        bus = await self._connect()
+        try:
+            await self._remove_bootstrap(bus)
+        finally:
+            bus.disconnect()
+
+    async def _remove_bootstrap(self, bus: MessageBus) -> None:
+        profiles = await self._call(bus, _SETTINGS_PATH, _SETTINGS_INTERFACE, "ListConnections")
+        active_paths = await self._property(bus, _ROOT_PATH, _BUS_NAME, "ActiveConnections")
+        for profile_path in profiles[0]:
+            settings = await self._call(bus, profile_path, _CONNECTION_INTERFACE, "GetSettings")
+            if settings[0]["connection"]["id"].value != _BOOTSTRAP_CONNECTION_ID:
+                continue
+            active = []
+            for active_path in active_paths:
+                connection = await self._property(bus, active_path, _ACTIVE_INTERFACE, "Connection")
+                if connection == profile_path:
+                    active.append(active_path)
+            await self._delete_profile(bus, profile_path)
+            for active_path in active:
+                await self._call(
+                    bus, _ROOT_PATH, _BUS_NAME, "DeactivateConnection", "o", [active_path]
+                )
+
+    async def _activate_private_hotspot(
+        self, ssid: str, password: str, recovery: bool = False
+    ) -> None:
+        bus = await self._connect()
+        try:
+            device_path = await self._wireless_device(bus)
+            profiles = await self._call(bus, _SETTINGS_PATH, _SETTINGS_INTERFACE, "ListConnections")
+            private_path = None
+            bootstrap_present = False
+            for profile_path in profiles[0]:
+                settings = await self._call(bus, profile_path, _CONNECTION_INTERFACE, "GetSettings")
+                connection_id = settings[0]["connection"]["id"].value
+                if connection_id == _SETUP_CONNECTION_ID:
+                    private_path = profile_path
+                elif connection_id == _BOOTSTRAP_CONNECTION_ID:
+                    bootstrap_present = True
+            if recovery and private_path is not None and not bootstrap_present:
+                status, _ = await self._wireless_state(bus)
+                if status is not None:
+                    return
+            if private_path is None:
+                result = await self._call(
+                    bus, _SETTINGS_PATH, _SETTINGS_INTERFACE, "AddConnection2",
+                    "a{sa{sv}}ua{sv}", [_hotspot_profile(ssid, password), 1, {}],
+                )
+                private_path = result[0]
+            await self._remove_bootstrap(bus)
+            active = await self._call(
+                bus, _ROOT_PATH, _BUS_NAME, "ActivateConnection", "ooo",
+                [private_path, device_path, "/"],
+            )
+            if await self._wait_for_activation(bus, active[0]) != 2:
+                raise NetworkError("Could not activate the private Photobox network; reboot the Pi.")
+        finally:
+            bus.disconnect()
 
     async def _status(self) -> NetworkStatus:
         bus = await self._connect()
@@ -173,6 +270,11 @@ class NetworkManagerAdapter:
         if connection_id == _SETUP_CONNECTION_ID:
             return (
                 NetworkStatus(True, "setup", "Connected to the Photobox setup network.", address),
+                address,
+            )
+        if connection_id == _BOOTSTRAP_CONNECTION_ID:
+            return (
+                NetworkStatus(True, "bootstrap", "Connected to the temporary setup network.", address),
                 address,
             )
         if connection_id.startswith(_VENUE_CONNECTION_PREFIX):
@@ -397,4 +499,25 @@ def _venue_profile(ssid: str, password: str) -> dict[str, dict[str, Variant]]:
         },
         "ipv4": {"method": Variant("s", "auto")},
         "ipv6": {"method": Variant("s", "auto")},
+    }
+
+
+def _hotspot_profile(ssid: str, password: str) -> dict[str, dict[str, Variant]]:
+    return {
+        "connection": {
+            "id": Variant("s", _SETUP_CONNECTION_ID),
+            "uuid": Variant("s", str(uuid.uuid4())),
+            "type": Variant("s", "wifi"),
+            "autoconnect": Variant("b", True),
+            "autoconnect-priority": Variant("i", 10),
+            "interface-name": Variant("s", _WIFI_INTERFACE),
+        },
+        "wifi": {
+            "mode": Variant("s", "ap"),
+            "ssid": Variant("ay", ssid.encode("utf-8")),
+            "band": Variant("s", "bg"),
+        },
+        "wifi-security": {"key-mgmt": Variant("s", "wpa-psk"), "psk": Variant("s", password)},
+        "ipv4": {"method": Variant("s", "shared")},
+        "ipv6": {"method": Variant("s", "disabled")},
     }
