@@ -117,14 +117,6 @@ Supported by the web installer during image write. See `installer/src/config.ts`
 - **Output:** Compressed `.img.xz` with SHA256 checksums
 - **Retention:** 30 days (pre-release artifacts)
 
-## Future Considerations
-
-- **Pi 2 support:** Not currently planned (limited RAM, outdated WiFi)
-- **Lite/headless variant:** Consider separate minimal image without desktop
-- **Automated WiFi domain updates:** Regulatory changes may require image rebuilds
-- **Offline installer:** Consider self-hosted installer fallback if GitHub Pages unavailable
-- **Mobile app:** WebUSB is browser-only; native app would extend to iOS/Android
-
 ## See Also
 
 - [DESIGN.md](DESIGN.md) - Comprehensive architecture and rationale
