@@ -2,6 +2,9 @@ import { logger } from '../utils/logger';
 import { downloadFile } from '../utils/format';
 import { PI_MODELS, PiModel } from '../config';
 
+const GITHUB_RELEASE_VERSION = 'v0.0.1-rc.1';
+const CORS_PROXY = 'https://cors.isomorphic-git.org';
+
 class ImageDownloader {
   private imageCache = new Map<string, ArrayBuffer>();
 
@@ -22,7 +25,9 @@ class ImageDownloader {
       const imageName = PI_MODELS[piModel].imageName;
       const imageSize = PI_MODELS[piModel].imageSizeBytes;
 
-      const url = `https://github.com/fylke/photobox/releases/download/latest/${imageName}`;
+      const directUrl = `https://github.com/fylke/photobox/releases/download/${GITHUB_RELEASE_VERSION}/${imageName}`;
+      // Use CORS proxy to bypass GitHub's lack of CORS headers
+      const url = `${CORS_PROXY}/${directUrl}`;
 
       logger.debug('Downloading from URL', { url, size: imageSize });
 
