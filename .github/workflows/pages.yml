@@ -4,9 +4,9 @@ on:
   push:
     branches: [main]
     paths:
-      - 'docs/imager/src/**'
-      - 'docs/imager/package.json'
-      - 'docs/imager/vite.config.ts'
+      - 'installer/src/**'
+      - 'installer/package.json'
+      - 'installer/vite.config.ts'
       - '.github/workflows/pages.yml'
 
 permissions:
@@ -29,11 +29,16 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Build imager
+      - name: Build installer
         run: |
-          cd docs/imager
+          cd installer
           npm install
           npm run build
+
+      - name: Copy built assets to docs
+        run: |
+          mkdir -p docs/installer
+          cp -r installer/dist/* docs/installer/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
