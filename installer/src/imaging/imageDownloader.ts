@@ -1,10 +1,7 @@
 import { logger } from '../utils/logger';
-import { downloadFile } from '../utils/format';
 import { PI_MODELS, PiModel } from '../config';
 
 const GITHUB_RELEASE_VERSION = 'v0.0.1-rc.1';
-// Use allorigins.win - a reliable CORS proxy for release assets
-const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
 
 // Cache for discovered image filename
 let discoveredImageName: string | null = null;
@@ -60,13 +57,57 @@ class ImageDownloader {
       const imageName = await discoverImageName();
 
       // Direct GitHub release download URL
-      const directUrl = `https://github.com/fylke/photobox/releases/download/${GITHUB_RELEASE_VERSION}/${imageName}`;
-      // Use CORS proxy to bypass CORS restrictions on GitHub release downloads
-      const url = `${CORS_PROXY}${encodeURIComponent(directUrl)}`;
+      const url = `https://github.com/fylke/photobox/releases/download/${GITHUB_RELEASE_VERSION}/${imageName}`;
 
-      logger.debug('Downloading from GitHub releases via CORS proxy', { directUrl, size: imageSize });
+      logger.debug('Downloading from GitHub releases', { url, size: imageSize });
 
-      const imageData = await downloadFile(url, onProgress);
+      // Use no-cors mode to bypass CORS, but this won't give us the blob directly
+      // Instead, we need to stream the response and convert it to ArrayBuffer
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/octet-stream',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to download: ${response.status} ${response.statusText}`);
+      }
+
+      if (!response.body) {
+        throw new Error('Response body is empty');
+      }
+
+      // Read the response body as a stream
+      const reader = response.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let downloaded = 0;
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          chunks.push(value);
+          downloaded += value.length;
+
+          if (onProgress) {
+            onProgress(downloaded, imageSize);
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      // Combine chunks into single buffer
+      const result = new Uint8Array(downloaded);
+      let offset = 0;
+      for (const chunk of chunks) {
+        result.set(chunk, offset);
+        offset += chunk.length;
+      }
+
+      const imageData = result.buffer;
 
       logger.info('Image download complete', {
         size: imageData.byteLength,
