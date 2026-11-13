@@ -39,13 +39,19 @@ This document captures architectural decisions for Photobox. For detailed design
 **Why:**
 - Single pre-configured image for reliable first-boot setup
 - Users don't need to install Photobox manually
+- Minimal image (no desktop) reduces SD card requirements and boot time
 - Image build is deterministic and reproducible via CI
 
 **Build process:**
-- CI builds on ARM hardware (raspberry pi OS)
+- CI builds on ARM hardware (Raspberry Pi OS)
 - Uses pi-gen (official Raspberry Pi OS builder) as base
-- Custom stage adds Photobox services and configuration
+- Only stages 0, 1, and custom photobox stage (no desktop/GUI)
 - Output: compressed `.img.xz` file with SHA256 checksums
+
+**Image characteristics:**
+- Headless (no X11, no desktop environment)
+- Command-line only with systemd services
+- Boots directly to Photobox daemon (no login prompt)
 
 **First-boot behavior:**
 - Opens temporary open WiFi network (`Photobox Setup`)
