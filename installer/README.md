@@ -1,8 +1,8 @@
-# Photobox Web Imager
+# Photobox Web Installer
 
-A zero-installation web-based imager for Photobox. No download, no installationâ€”just open a link and write your SD card.
+A zero-installation web-based installer for Photobox. No download, no installationâ€”just open a link and write your SD card.
 
-**Live:** https://fylke.github.io/photobox/imager
+**Live:** https://fylke.github.io/photobox/installer
 
 ## Features
 
@@ -16,7 +16,7 @@ A zero-installation web-based imager for Photobox. No download, no installationâ
 
 ## Usage
 
-1. Open https://fylke.github.io/photobox/imager in your browser (Chrome, Edge, or Brave)
+1. Open https://fylke.github.io/photobox/installer in your browser (Chrome, Edge, or Brave)
 2. Select your Raspberry Pi model (3, 4, or 5)
 3. Select your WiFi country
 4. Connect your SD card reader
@@ -33,7 +33,7 @@ A zero-installation web-based imager for Photobox. No download, no installationâ
 ### Setup
 
 ```bash
-cd docs/imager
+cd installer
 npm install
 ```
 
@@ -108,15 +108,15 @@ Add `?debug=true` to the URL or check the debug checkbox on the review screen to
 
 ## Deployment
 
-The imager is automatically deployed to GitHub Pages when changes are pushed to the `main` branch. It's hosted at https://fylke.github.io/photobox/imager.
+The installer is automatically deployed to GitHub Pages when changes are pushed to the `main` branch. It's hosted at https://fylke.github.io/photobox/installer.
 
 ### Manual Deployment
 
 ```bash
 npm run build
-cp -r dist/* ../../public/
+cp -r dist/* ../../docs/installer/
 git add -A
-git commit -m "Update imager"
+git commit -m "Update installer"
 git push
 ```
 
