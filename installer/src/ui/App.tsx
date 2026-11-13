@@ -5,6 +5,7 @@ import { logger } from '../utils/logger';
 import SplashScreen from './SplashScreen';
 import HardwareSelector from './HardwareSelector';
 import CountryPicker from './CountryPicker';
+import ImageSelectScreen from './ImageSelectScreen';
 import ReviewScreen from './ReviewScreen';
 import ProgressScreen from './ProgressScreen';
 import SuccessScreen from './SuccessScreen';
@@ -14,6 +15,7 @@ export type Screen =
   | 'splash'
   | 'hardware'
   | 'country'
+  | 'image-select'
   | 'review'
   | 'progress'
   | 'success'
@@ -22,6 +24,7 @@ export type Screen =
 export interface AppState {
   piModel: PiModel | null;
   country: (CountryConfig & { code: string }) | null;
+  imageFile: File | null;
   debugMode: boolean;
   error: string | null;
 }
@@ -31,6 +34,7 @@ const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
     piModel: null,
     country: null,
+    imageFile: null,
     debugMode: logger.isDebugEnabled(),
     error: null,
   });
@@ -44,6 +48,12 @@ const App: React.FC = () => {
   const handleSelectCountry = useCallback((country: CountryConfig & { code: string }) => {
     logger.info('Selected country', { country: country.code, domain: country.domain });
     setState((prev) => ({ ...prev, country }));
+    setScreen('image-select');
+  }, []);
+
+  const handleSelectImage = useCallback((imageFile: File) => {
+    logger.info('Selected image file', { name: imageFile.name, size: imageFile.size });
+    setState((prev) => ({ ...prev, imageFile }));
     setScreen('review');
   }, []);
 
@@ -75,6 +85,7 @@ const App: React.FC = () => {
     setState({
       piModel: null,
       country: null,
+      imageFile: null,
       debugMode: logger.isDebugEnabled(),
       error: null,
     });
@@ -100,17 +111,31 @@ const App: React.FC = () => {
           )
         );
 
-      case 'review':
+      case 'image-select':
         return (
           state.piModel &&
           state.country && (
+            <ImageSelectScreen
+              piModel={state.piModel}
+              country={state.country}
+              onImageSelected={handleSelectImage}
+              onBack={() => setScreen('country')}
+            />
+          )
+        );
+
+      case 'review':
+        return (
+          state.piModel &&
+          state.country &&
+          state.imageFile && (
             <ReviewScreen
               piModel={state.piModel}
               country={state.country}
               debugMode={state.debugMode}
               onToggleDebug={handleToggleDebug}
               onStart={handleStartWrite}
-              onBack={() => setScreen('country')}
+              onBack={() => setScreen('image-select')}
             />
           )
         );
@@ -118,10 +143,12 @@ const App: React.FC = () => {
       case 'progress':
         return (
           state.piModel &&
-          state.country && (
+          state.country &&
+          state.imageFile && (
             <ProgressScreen
               piModel={state.piModel}
               country={state.country}
+              imageFile={state.imageFile}
               debugMode={state.debugMode}
               onComplete={handleWriteComplete}
               onError={handleError}

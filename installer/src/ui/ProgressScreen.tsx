@@ -1,17 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { PiModel, CountryConfig, PI_MODELS } from '../config';
 import { logger } from '../utils/logger';
-import { imageDownloader } from '../imaging/imageDownloader';
 import { imageProcessor } from '../imaging/imageProcessor';
 import { imageWriter } from '../webusb/writer';
 import { formatBytes, formatSpeed, formatETA, calculateETA } from '../utils/format';
 import DebugPanel from './DebugPanel';
 
-type Stage = 'downloading' | 'customizing' | 'writing' | 'complete';
+type Stage = 'reading' | 'customizing' | 'writing' | 'complete';
 
 interface ProgressScreenProps {
   piModel: PiModel;
   country: CountryConfig;
+  imageFile: File;
   debugMode: boolean;
   onComplete: () => void;
   onError: (error: string) => void;
@@ -20,11 +20,12 @@ interface ProgressScreenProps {
 const ProgressScreen: React.FC<ProgressScreenProps> = ({
   piModel,
   country,
+  imageFile,
   debugMode,
   onComplete,
   onError,
 }) => {
-  const [stage, setStage] = useState<Stage>('downloading');
+  const [stage, setStage] = useState<Stage>('reading');
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState('');
   const [eta, setEta] = useState('');
@@ -36,26 +37,31 @@ const ProgressScreen: React.FC<ProgressScreenProps> = ({
 
     const runProcess = async () => {
       try {
-        logger.info('Starting write process', { piModel, country: country.domain });
+        logger.info('Starting write process', { piModel, country: country.domain, imageFile: imageFile.name });
 
-        setStatusText(`Downloading Photobox image (${config.imageSizeGB} GB)...`);
-        setStage('downloading');
+        setStatusText(`Reading Photobox image (${config.imageSizeGB} GB)...`);
+        setStage('reading');
 
-        const imageData = await imageDownloader.downloadImage(piModel, (downloaded, total) => {
-          if (cancelled) return;
-
-          const percent = Math.round((downloaded / total) * 100);
-          setProgress(percent);
-
-          const bytesPerSecond = downloaded / ((Date.now() - Date.now() + 1000) / 1000);
-          const remaining = total - downloaded;
-          const etaSeconds = calculateETA(remaining, bytesPerSecond);
-
-          setSpeed(formatSpeed(bytesPerSecond));
-          setEta(formatETA(etaSeconds));
-          setStatusText(
-            `Downloaded ${formatBytes(downloaded)} / ${formatBytes(total)} (${percent}%)`
-          );
+        // Read the file as ArrayBuffer
+        const imageData = await new Promise<ArrayBuffer>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            if (reader.result instanceof ArrayBuffer) {
+              resolve(reader.result);
+            } else {
+              reject(new Error('Failed to read file as ArrayBuffer'));
+            }
+          };
+          reader.onerror = () => reject(new Error('Failed to read image file'));
+          reader.onprogress = (event) => {
+            if (cancelled) return;
+            if (event.lengthComputable) {
+              const percent = Math.round((event.loaded / event.total) * 100);
+              setProgress(percent);
+              setStatusText(`Reading ${percent}%`);
+            }
+          };
+          reader.readAsArrayBuffer(imageFile);
         });
 
         if (cancelled) return;
@@ -119,7 +125,7 @@ const ProgressScreen: React.FC<ProgressScreenProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [piModel, country, config.imageSizeGB, onComplete, onError]);
+  }, [piModel, country, config.imageSizeGB, imageFile, onComplete, onError]);
 
   return (
     <div
@@ -136,7 +142,7 @@ const ProgressScreen: React.FC<ProgressScreenProps> = ({
       <div style={{ flex: debugMode ? 1 : 'none', minWidth: 0 }}>
         <h2 style={{ marginBottom: '0.5rem' }}>Writing Image</h2>
         <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>
-          {stage === 'downloading' && '⬇️ Downloading image...'}
+          {stage === 'reading' && '📖 Reading image...'}
           {stage === 'customizing' && '⚙️ Customizing image...'}
           {stage === 'writing' && '💾 Writing to SD card...'}
           {stage === 'complete' && '✅ Complete!'}
