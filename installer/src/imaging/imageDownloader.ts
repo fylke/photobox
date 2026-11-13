@@ -3,7 +3,8 @@ import { downloadFile } from '../utils/format';
 import { PI_MODELS, PiModel } from '../config';
 
 const GITHUB_RELEASE_VERSION = 'v0.0.1-rc.1';
-const JSDELIVR_CDN = 'https://cdn.jsdelivr.net/gh';
+// Use allorigins.win - a reliable CORS proxy for release assets
+const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
 
 // Cache for discovered image filename
 let discoveredImageName: string | null = null;
@@ -58,11 +59,12 @@ class ImageDownloader {
       const imageSize = PI_MODELS[piModel].imageSizeBytes;
       const imageName = await discoverImageName();
 
-      // Use jsDelivr CDN which mirrors GitHub releases with proper CORS headers
-      // Format: https://cdn.jsdelivr.net/gh/owner/repo@version/path
-      const url = `${JSDELIVR_CDN}/fylke/photobox@${GITHUB_RELEASE_VERSION}/${imageName}`;
+      // Direct GitHub release download URL
+      const directUrl = `https://github.com/fylke/photobox/releases/download/${GITHUB_RELEASE_VERSION}/${imageName}`;
+      // Use CORS proxy to bypass CORS restrictions on GitHub release downloads
+      const url = `${CORS_PROXY}${encodeURIComponent(directUrl)}`;
 
-      logger.debug('Downloading from jsDelivr CDN', { url, size: imageSize });
+      logger.debug('Downloading from GitHub releases via CORS proxy', { directUrl, size: imageSize });
 
       const imageData = await downloadFile(url, onProgress);
 
