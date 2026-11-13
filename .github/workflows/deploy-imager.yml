@@ -32,11 +32,12 @@ jobs:
           # Create imager directory in docs
           mkdir -p docs/imager
           
-          # Remove old built files
-          rm -rf docs/imager/index.html docs/imager/assets 2>/dev/null || true
+          # Remove old built assets and index
+          rm -rf docs/imager/assets docs/imager/index.html 2>/dev/null || true
           
-          # Copy new build (dist already has correct paths due to vite base config)
-          cp -r docs/imager/dist/* docs/imager/
+          # Copy built index.html and assets
+          cp docs/imager/dist/index.html docs/imager/
+          cp -r docs/imager/dist/assets docs/imager/
           
           # Show what was deployed
           echo "Deployed files:"

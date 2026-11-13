@@ -6,3 +6,5 @@ dist/
 *~
 .env.local
 .env.*.local
+index.html
+assets/
