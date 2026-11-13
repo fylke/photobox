@@ -28,9 +28,9 @@ Before testing, record the test ID, date, tester, Pi model, OS/image version and
 
 ### A. Provision and first boot
 
-- [ ] Build the Imager catalogue and image in CI; record the image and extracted-image checksums.
-- [ ] In Raspberry Pi Imager, load the Photobox catalogue, select the supported Pi model and image, and set the correct Wi-Fi country in **Customisation > Localisation**. Confirm venue Wi-Fi and remote access are not required.
-- [ ] Flash and verify the image to the disposable SD card. Boot the Pi with no setup file on the boot partition.
+- [ ] Build the image in CI; record the image and extracted-image checksums.
+- [ ] Use the [Photobox Web Installer](https://fylke.github.io/photobox/installer) to write the image. Select the supported Pi model and Wi-Fi country. Confirm the device is correct before writing.
+- [ ] Boot the Pi with no setup file on the boot partition.
 - [ ] Confirm the visible open **Photobox Setup** network starts only for an unconfigured device and the page is reachable at `10.42.0.1:8000`.
 - [ ] From phone A, claim the booth. Confirm credentials are unique, displayed only to the claimant, not included in URLs or ordinary logs, and persisted across a reboot.
 - [ ] Confirm another client cannot claim after the first claim. Confirm the temporary open network expires after 15 minutes and is removed when private Wi-Fi is activated.

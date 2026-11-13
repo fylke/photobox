@@ -2,23 +2,20 @@
 
 Photobox is a local photo-booth daemon with a browser-based capture screen.
 
-## Choose a setup path
+## Set up Photobox
 
-- **Try Photobox on this computer:** install it, initialize a local setup PIN, and start the daemon. The computer and phone must already share a network. This does not configure a Pi hotspot.
-- **Set up a Raspberry Pi:** use Raspberry Pi Imager and the first-boot setup network. This is the only supported Pi setup flow. Follow [First Boot and Pairing](docs/first-boot-and-pairing.md) for the walkthrough. Physical hardware validation is still required.
+The recommended way to set up Photobox is on a **Raspberry Pi 4 or 5** with the included photo booth experience. Follow [First Boot and Pairing](docs/first-boot-and-pairing.md) for the walkthrough. Physical hardware validation is still in progress.
 
-## Run on this computer
+### Advanced: Run on this computer
 
-Use Python 3.11 or newer. From the project directory, install Photobox and initialize its one-time administrator PIN:
+For development or testing, you can run Photobox on any computer with Python 3.11 or newer:
 
 ```sh
 python3 -m pip install .
 photobox-setup-pin
 ```
 
-Record the 6-digit PIN when it is printed; it is shown only once. The command stores a hash under `PHOTOBOX_DATA_DIR` (default: `~/photobox`) and refuses to initialize a data directory that already has a PIN. If you set a custom `PHOTOBOX_DATA_DIR`, use the same value for both the setup command and daemon.
-
-Connect a V4L2-compatible webcam and install the system `ffmpeg` executable for camera capture, or run without a camera using the mock driver:
+Record the 6-digit PIN when it is printed; it is shown only once. Connect a V4L2-compatible webcam and install the system `ffmpeg` executable, or run with the mock driver:
 
 ```sh
 photobox
@@ -26,13 +23,20 @@ photobox
 PHOTOBOX_CAMERA=mock photobox
 ```
 
-Open `http://localhost:8000` on the same computer, or use the computer's reachable network address from another device. Enter the setup PIN to claim administrator access. The local-host path does not create a Wi-Fi hotspot or manage Wi-Fi; the phone or laptop must already be on a network that can reach the computer.
+Open `http://localhost:8000`. The local-host path does not create a Wi-Fi hotspot; the phone must already be on a network that can reach the computer.
 
 ## Raspberry Pi image
 
-Each prerelease publishes an Imager catalogue to GitHub Pages and the matching image as a GitHub Release asset. Set the repository's Pages source to **GitHub Actions** before publishing. Users select the Wi-Fi country in Imager's **Localisation** step; see [First Boot and Pairing](docs/first-boot-and-pairing.md#set-up-with-raspberry-pi-imager). The catalogue and first-boot hotspot have not yet been validated on physical hardware.
+Each prerelease publishes a Photobox image as a GitHub Release asset and publishes the web installer to GitHub Pages. The web installer is the recommended way to write images to your SD card.
 
-On the Pi, the first-boot setup network is open and temporary. The administrator claims the booth and switches it to a private WPA-Personal hotspot, then may configure venue Wi-Fi. Enterprise Wi-Fi and captive portals are not supported. Local capture does not require internet access.
+**To set up a Photobox booth:**
+1. Open the [Photobox Web Installer](https://fylke.github.io/photobox/installer)
+2. Select your Raspberry Pi model (4 or 5)
+3. Select your Wi-Fi country
+4. Connect your SD card reader and write the image
+5. Insert the card into your Pi, connect the camera, and power on
+
+The image includes Photobox and is pre-configured for the first-boot setup network. Users select the Wi-Fi country during write time; see [First Boot and Pairing](docs/first-boot-and-pairing.md) for the full setup walkthrough. The first-boot hotspot and web installer have not yet been validated on physical hardware.
 
 For generic DSLR still capture through libgphoto2, set the camera to capture JPEG and set `PHOTOBOX_CAMERA=gphoto2`. The app uses the configured V4L2 webcam for preview and as a capture fallback when available. This initial adapter does not claim DSLR live preview. Exact camera-model compatibility has not been physically validated.
 
