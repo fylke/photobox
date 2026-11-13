@@ -29,16 +29,18 @@ jobs:
 
       - name: Deploy to docs folder
         run: |
-          # Clean old imager files
-          rm -rf docs/assets docs/index.html 2>/dev/null || true
-          rm -rf docs/*.js docs/*.css 2>/dev/null || true
+          # Create imager directory in docs
+          mkdir -p docs/imager
           
-          # Copy new build
-          cp -r docs/imager/dist/* docs/
+          # Remove old built files
+          rm -rf docs/imager/index.html docs/imager/assets 2>/dev/null || true
+          
+          # Copy new build (dist already has correct paths due to vite base config)
+          cp -r docs/imager/dist/* docs/imager/
           
           # Show what was deployed
           echo "Deployed files:"
-          ls -la docs/
+          ls -la docs/imager/
 
       - name: Commit and push
         run: |
