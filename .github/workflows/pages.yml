@@ -35,7 +35,7 @@ jobs:
           npm install
           
           # Generate index.html template for Vite
-          cat > index.html << 'EOF'
+          cat > index.html << 'HTMLEOF'
 <!doctype html>
 <html lang="en">
   <head>
@@ -49,7 +49,7 @@ jobs:
     <script type="module" src="./src/main.tsx"></script>
   </body>
 </html>
-EOF
+HTMLEOF
           
           npm run build
 
