@@ -1,9 +1,10 @@
 name: Deploy to GitHub Pages
 
 on:
-  push:
+  workflow_run:
+    workflows: ['Deploy Web Imager']
+    types: [completed]
     branches: [main]
-    paths: ['docs/**']
 
 permissions:
   contents: read
