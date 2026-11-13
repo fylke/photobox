@@ -35,21 +35,19 @@ jobs:
           npm install
           
           # Generate index.html template for Vite
-          cat > index.html << 'HTMLEOF'
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📷</text></svg>" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Photobox Installer</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="./src/main.tsx"></script>
-  </body>
-</html>
-HTMLEOF
+          echo '<!doctype html>' > index.html
+          echo '<html lang="en">' >> index.html
+          echo '  <head>' >> index.html
+          echo '    <meta charset="UTF-8" />' >> index.html
+          echo '    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📷</text></svg>" />' >> index.html
+          echo '    <meta name="viewport" content="width=device-width, initial-scale=1.0" />' >> index.html
+          echo '    <title>Photobox Installer</title>' >> index.html
+          echo '  </head>' >> index.html
+          echo '  <body>' >> index.html
+          echo '    <div id="root"></div>' >> index.html
+          echo '    <script type="module" src="./src/main.tsx"></script>' >> index.html
+          echo '  </body>' >> index.html
+          echo '</html>' >> index.html
           
           npm run build
 
