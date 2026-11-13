@@ -2,6 +2,8 @@
 
 Status: Draft. Derived from issues #1–#21 in `fylke/photobox`. Where an issue is vague, the open questions are listed in section 14.
 
+> **Quick reference:** For key architecture decisions (web installer, Pi 3/4/5 support, setup flow, etc.), see [AGENTS.md](AGENTS.md).
+
 ## 1. Goals
 
 A photo booth that runs on a Raspberry Pi with a camera attached.
