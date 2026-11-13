@@ -4,7 +4,7 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
-  base: '/photobox/imager/',
+  base: '/imager/',
   build: {
     outDir: 'dist',
     sourcemap: false,
