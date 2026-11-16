@@ -27,16 +27,18 @@ Open `http://localhost:8000`. The local-host path does not create a Wi-Fi hotspo
 
 ## Raspberry Pi image
 
-Each prerelease publishes a Photobox image as a GitHub Release asset and publishes the web installer to GitHub Pages. The web installer is the recommended way to write images to your SD card.
+Each prerelease publishes a Photobox image as a GitHub Release asset. The web installer prepares a configured image locally in your browser; Raspberry Pi Imager writes it to your SD card.
 
 **To set up a Photobox booth:**
 1. Open the [Photobox Web Installer](https://fylke.github.io/photobox/installer)
-2. Select your Raspberry Pi model (4 or 5)
-3. Select your Wi-Fi country
-4. Connect your SD card reader and write the image
+2. Select your Wi-Fi country and, optionally, boot debug
+3. Prepare and save the image
+4. Use Raspberry Pi Imager's **Use custom** option to write it to your SD card
 5. Insert the card into your Pi, connect the camera, and power on
 
-The image includes Photobox and is pre-configured for the first-boot setup network. Users select the Wi-Fi country during write time; see [First Boot and Pairing](docs/first-boot-and-pairing.md) for the full setup walkthrough. The first-boot hotspot and web installer have not yet been validated on physical hardware.
+The image includes Photobox and is pre-configured for the first-boot setup network. See [First Boot and Pairing](docs/first-boot-and-pairing.md) for the full setup walkthrough. The first-boot hotspot and web installer have not yet been validated on physical hardware.
+
+Maintainers can run the **Clean up old prerelease images** workflow manually from GitHub Actions. It keeps all assets on the most recently published prerelease and removes `.img.xz` and `SHA256SUMS` assets from older prereleases, leaving their releases, tags, and other assets intact. Old image download links will stop working. Cleanup refuses to run if the newest prerelease has no image; stable releases and draft releases are not changed. CI build artifacts have their own 30-day retention.
 
 For generic DSLR still capture through libgphoto2, set the camera to capture JPEG and set `PHOTOBOX_CAMERA=gphoto2`. The app uses the configured V4L2 webcam for preview and as a capture fallback when available. This initial adapter does not claim DSLR live preview. Exact camera-model compatibility has not been physically validated.
 

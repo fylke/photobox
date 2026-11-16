@@ -1,0 +1,17 @@
+[Unit]
+Description=Save Photobox boot diagnostics
+DefaultDependencies=no
+ConditionKernelCommandLine=photobox.debug=1
+RequiresMountsFor=/boot/firmware
+After=systemd-journald.service local-fs.target
+Before=sysinit.target shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=simple
+ExecStart=/opt/photobox/venv/bin/python -m photobox.boot_debug
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=sysinit.target

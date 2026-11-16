@@ -8,7 +8,7 @@ This is the end-to-end acceptance run for a real Photobox Pi, webcam, and two ph
 
 - Raspberry Pi 4 or 5 with the supported Photobox OS image.
 - V4L2-compatible USB/CSI webcam and any required camera permissions.
-- A separate computer with the project’s local image-provisioning tool and an SD-card reader.
+- A separate computer with Raspberry Pi Imager and an SD-card reader.
 - Two phones or one phone and one laptop with current browsers.
 - A disposable Wi-Fi network you administer, plus the Pi setup hotspot path.
 - A blank/backup SD card and a way to restore the prior image.
@@ -29,7 +29,8 @@ Before testing, record the test ID, date, tester, Pi model, OS/image version and
 ### A. Provision and first boot
 
 - [ ] Build the image in CI; record the image and extracted-image checksums.
-- [ ] Use the [Photobox Web Installer](https://fylke.github.io/photobox/installer) to write the image. Select the supported Pi model and Wi-Fi country. Confirm the device is correct before writing.
+- [ ] Use the [Photobox Web Installer](https://fylke.github.io/photobox/installer) to prepare an image with the correct Wi-Fi country, then write it with Raspberry Pi Imager. Confirm the device is correct before writing.
+- [ ] With boot debug enabled, confirm console diagnostics and the bounded boot-partition log files; repeat without debug and confirm they are not created.
 - [ ] Boot the Pi with no setup file on the boot partition.
 - [ ] Confirm the visible open **Photobox Setup** network starts only for an unconfigured device and the page is reachable at `10.42.0.1:8000`.
 - [ ] From phone A, claim the booth. Confirm credentials are unique, displayed only to the claimant, not included in URLs or ordinary logs, and persisted across a reboot.

@@ -9,6 +9,9 @@ install -D -m 0644 \
 	files/photobox-first-boot.service \
 	"${ROOTFS_DIR}/etc/systemd/system/photobox-first-boot.service"
 install -D -m 0644 \
+	files/photobox-boot-debug.service \
+	"${ROOTFS_DIR}/etc/systemd/system/photobox-boot-debug.service"
+install -D -m 0644 \
 	files/photobox-regulatory-domain.service \
 	"${ROOTFS_DIR}/etc/systemd/system/photobox-regulatory-domain.service"
 install -D -m 0644 \

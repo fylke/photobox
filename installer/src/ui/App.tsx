@@ -1,175 +1,106 @@
-import React, { useCallback, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import '../styles/global.css';
-import { PiModel, CountryConfig } from '../config';
-import { logger } from '../utils/logger';
-import SplashScreen from './SplashScreen';
-import HardwareSelector from './HardwareSelector';
-import CountryPicker from './CountryPicker';
-import ImageSelectScreen from './ImageSelectScreen';
-import ReviewScreen from './ReviewScreen';
-import ProgressScreen from './ProgressScreen';
-import SuccessScreen from './SuccessScreen';
-import ErrorScreen from './ErrorScreen';
-
-export type Screen =
-  | 'splash'
-  | 'hardware'
-  | 'country'
-  | 'image-select'
-  | 'review'
-  | 'progress'
-  | 'success'
-  | 'error';
-
-export interface AppState {
-  piModel: PiModel | null;
-  country: (CountryConfig & { code: string }) | null;
-  imageFile: File | null;
-  debugMode: boolean;
-  error: string | null;
-}
+import { getCountriesByName } from '../config';
+import { chooseImageDestination, getImageManifest, prepareImage } from '../imaging/prepareImage';
 
 const App: React.FC = () => {
-  const [screen, setScreen] = useState<Screen>('splash');
-  const [state, setState] = useState<AppState>({
-    piModel: null,
-    country: null,
-    imageFile: null,
-    debugMode: logger.isDebugEnabled(),
-    error: null,
-  });
+  const [country, setCountry] = useState('');
+  const [debug, setDebug] = useState(false);
+  const [manifest, setManifest] = useState<Awaited<ReturnType<typeof getImageManifest>> | null>(null);
+  const [status, setStatus] = useState('Checking for an image...');
+  const [error, setError] = useState('');
+  const [working, setWorking] = useState(false);
 
-  const handleSelectPi = useCallback((model: PiModel) => {
-    logger.info('Selected Pi model', { model });
-    setState((prev) => ({ ...prev, piModel: model }));
-    setScreen('country');
+  useEffect(() => {
+    let active = true;
+    getImageManifest().then(
+      (result) => {
+        if (active) {
+          setManifest(result);
+          setStatus('');
+        }
+      },
+      (reason: unknown) => {
+        if (active) {
+          setError(reason instanceof Error ? reason.message : String(reason));
+          setStatus('');
+        }
+      },
+    );
+    return () => { active = false; };
   }, []);
 
-  const handleSelectCountry = useCallback((country: CountryConfig & { code: string }) => {
-    logger.info('Selected country', { country: country.code, domain: country.domain });
-    setState((prev) => ({ ...prev, country }));
-    setScreen('image-select');
-  }, []);
-
-  const handleSelectImage = useCallback((imageFile: File) => {
-    logger.info('Selected image file', { name: imageFile.name, size: imageFile.size });
-    setState((prev) => ({ ...prev, imageFile }));
-    setScreen('review');
-  }, []);
-
-  const handleToggleDebug = useCallback((enabled: boolean) => {
-    logger.setDebugMode(enabled);
-    setState((prev) => ({ ...prev, debugMode: enabled }));
-  }, []);
-
-  const handleStartWrite = useCallback(() => {
-    setScreen('progress');
-  }, []);
-
-  const handleWriteComplete = useCallback(() => {
-    setScreen('success');
-  }, []);
-
-  const handleError = useCallback((error: string) => {
-    logger.error('Application error', { error });
-    setState((prev) => ({ ...prev, error }));
-    setScreen('error');
-  }, []);
-
-  const handleRetry = useCallback(() => {
-    setState((prev) => ({ ...prev, error: null }));
-    setScreen('review');
-  }, []);
-
-  const handleReset = useCallback(() => {
-    setState({
-      piModel: null,
-      country: null,
-      imageFile: null,
-      debugMode: logger.isDebugEnabled(),
-      error: null,
-    });
-    setScreen('splash');
-    logger.clearLogs();
-  }, []);
-
-  const renderScreen = () => {
-    switch (screen) {
-      case 'splash':
-        return <SplashScreen onNext={() => setScreen('hardware')} />;
-
-      case 'hardware':
-        return <HardwareSelector onSelect={handleSelectPi} />;
-
-      case 'country':
-        return (
-          state.piModel && (
-            <CountryPicker
-              onSelect={handleSelectCountry}
-              onBack={() => setScreen('hardware')}
-            />
-          )
-        );
-
-      case 'image-select':
-        return (
-          state.piModel &&
-          state.country && (
-            <ImageSelectScreen
-              piModel={state.piModel}
-              country={state.country}
-              onImageSelected={handleSelectImage}
-              onBack={() => setScreen('country')}
-            />
-          )
-        );
-
-      case 'review':
-        return (
-          state.piModel &&
-          state.country &&
-          state.imageFile && (
-            <ReviewScreen
-              piModel={state.piModel}
-              country={state.country}
-              debugMode={state.debugMode}
-              onToggleDebug={handleToggleDebug}
-              onStart={handleStartWrite}
-              onBack={() => setScreen('image-select')}
-            />
-          )
-        );
-
-      case 'progress':
-        return (
-          state.piModel &&
-          state.country &&
-          state.imageFile && (
-            <ProgressScreen
-              piModel={state.piModel}
-              country={state.country}
-              imageFile={state.imageFile}
-              debugMode={state.debugMode}
-              onComplete={handleWriteComplete}
-              onError={handleError}
-            />
-          )
-        );
-
-      case 'success':
-        return <SuccessScreen piModel={state.piModel!} onReset={handleReset} />;
-
-      case 'error':
-        return (
-          <ErrorScreen error={state.error!} onRetry={handleRetry} onReset={handleReset} />
-        );
-
-      default:
-        return null;
+  const handlePrepare = async () => {
+    if (!manifest || !country || working) return;
+    setError('');
+    setStatus('');
+    setWorking(true);
+    try {
+      const destination = await chooseImageDestination();
+      await prepareImage(destination, manifest, country, debug, setStatus);
+      setStatus('Image saved. Write it to your SD card with Raspberry Pi Imager using “Use custom”.');
+    } catch (reason) {
+      if (reason instanceof Error && reason.name === 'AbortError') {
+        setStatus('Image preparation cancelled.');
+      } else if (reason instanceof Error && reason.name === 'QuotaExceededError') {
+        setError('Browser temporary storage is full. Use a regular (not private) browser window and free disk space, then try again.');
+      } else {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    } finally {
+      setWorking(false);
     }
   };
 
-  return <div style={{ width: '100%' }}>{renderScreen()}</div>;
+  return (
+    <main style={{ maxWidth: '600px', padding: '2rem', background: 'var(--bg-primary)', borderRadius: '1rem', boxShadow: 'var(--shadow-lg)' }}>
+      <h1 style={{ marginBottom: '1rem', color: 'var(--primary)' }}>Photobox image</h1>
+      <p style={{ marginBottom: '1rem' }}>
+        Prepare an image for a Raspberry Pi 4 or 5, then write it with Raspberry Pi Imager.
+      </p>
+      <label htmlFor="country" style={{ display: 'block', marginBottom: '0.5rem' }}>Wi-Fi country</label>
+      <select id="country" value={country} onChange={(event) => setCountry(event.target.value)} disabled={working}>
+        <option value="">Select the country where the Pi will be used</option>
+        {getCountriesByName().map(([code, details]) => (
+          <option value={code} key={code}>{details.name} ({code})</option>
+        ))}
+      </select>
+      <label style={{ display: 'flex', alignItems: 'start', gap: '0.5rem', marginTop: '1.5rem' }}>
+        <input
+          type="checkbox"
+          checked={debug}
+          disabled={working || !manifest?.bootDebug}
+          onChange={(event) => setDebug(event.target.checked)}
+          style={{ width: 'auto', marginTop: '0.3rem' }}
+        />
+        <span>
+          Enable Raspberry Pi boot debug on every boot. Logs appear on the console where available
+          and are saved on the SD card’s boot partition, up to 200 MiB. They may contain sensitive
+          information and can be read by anyone with the card.
+        </span>
+      </label>
+      {manifest && !manifest.bootDebug && (
+        <p style={{ marginTop: '0.5rem' }}>This release does not support boot debug; a newer image is required.</p>
+      )}
+      <p style={{ margin: '1.5rem 0', color: 'var(--text-secondary)' }}>
+        The browser downloads and prepares the base image locally. Allow several gigabytes of free
+        disk space, keep this page open, and choose where to save the resulting uncompressed image.
+      </p>
+      <button
+        onClick={handlePrepare}
+        disabled={!manifest || !country || working}
+        style={{ width: '100%', background: 'var(--primary)', color: 'white' }}
+      >
+        {working ? 'Preparing image...' : 'Prepare and save image'}
+      </button>
+      {status && <p role="status" style={{ marginTop: '1rem' }}>{status}</p>}
+      {error && <p role="alert" style={{ marginTop: '1rem', color: 'var(--danger)' }}>{error}</p>}
+      <p style={{ marginTop: '1.5rem', color: 'var(--text-secondary)' }}>
+        Writing the image erases the selected SD card. The image and first-boot setup have not yet
+        been validated on physical hardware.
+      </p>
+    </main>
+  );
 };
 
 export default App;

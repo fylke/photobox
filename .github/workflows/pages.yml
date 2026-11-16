@@ -5,8 +5,11 @@ on:
     branches: [main]
     paths:
       - 'installer/src/**'
+      - 'installer/tests/**'
       - 'installer/package.json'
+      - 'installer/package-lock.json'
       - 'installer/vite.config.ts'
+      - 'tools/stage_installer_image.py'
       - '.github/workflows/pages.yml'
 
 permissions:
@@ -17,6 +20,9 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    concurrency:
+      group: photobox-pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -27,34 +33,42 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Build installer
+        working-directory: installer
         run: |
-          cd installer
-          npm install
-          
-          # Generate index.html template for Vite
-          echo '<!doctype html>' > index.html
-          echo '<html lang="en">' >> index.html
-          echo '  <head>' >> index.html
-          echo '    <meta charset="UTF-8" />' >> index.html
-          echo '    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📷</text></svg>" />' >> index.html
-          echo '    <meta name="viewport" content="width=device-width, initial-scale=1.0" />' >> index.html
-          echo '    <title>Photobox Installer</title>' >> index.html
-          echo '  </head>' >> index.html
-          echo '  <body>' >> index.html
-          echo '    <div id="root"></div>' >> index.html
-          echo '    <script type="module" src="./src/main.tsx"></script>' >> index.html
-          echo '  </body>' >> index.html
-          echo '</html>' >> index.html
-          
+          npm ci
+          npm test
           npm run build
 
       - name: Copy built assets to docs
         run: |
           mkdir -p docs/installer
           cp -r installer/dist/* docs/installer/
+
+      - name: Stage latest prerelease image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$(gh api --paginate --slurp "repos/${GH_REPO}/releases?per_page=100" \
+            | jq -r '[.[][] | select(.prerelease and (.draft | not))] | sort_by(.published_at) | last | .tag_name // empty')"
+          if [ -z "$tag" ]; then
+            echo "No published prerelease is available; no image will be staged."
+            exit 0
+          fi
+          mkdir -p release-image
+          gh release download "$tag" --dir release-image --pattern '*.img.xz' --pattern SHA256SUMS
+          has_capabilities="$(gh release view "$tag" --json assets --jq 'any(.assets[]; .name == "photobox-image-capabilities.json")')"
+          if [ "$has_capabilities" = true ]; then
+            gh release download "$tag" --dir release-image --pattern photobox-image-capabilities.json
+          fi
+          python3 tools/stage_installer_image.py release-image docs/installer/image
+          mapfile -t images < <(find release-image -maxdepth 1 -name '*.img.xz' -print)
+          python3 tools/build_imager_catalog.py "${images[0]}" "$GH_REPO" "$tag" docs/imager.json
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

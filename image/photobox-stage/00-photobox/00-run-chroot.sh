@@ -8,7 +8,8 @@ chmod 0700 /var/lib/photobox
 mkdir -p /etc/photobox
 chown root:photobox /etc/photobox
 chmod 0750 /etc/photobox
-mkdir -p /etc/systemd/system/multi-user.target.wants
+mkdir -p /etc/systemd/system/multi-user.target.wants /etc/systemd/system/sysinit.target.wants
 ln -s /etc/systemd/system/photobox.service /etc/systemd/system/multi-user.target.wants/photobox.service
 ln -s /etc/systemd/system/photobox-first-boot.service /etc/systemd/system/multi-user.target.wants/photobox-first-boot.service
+ln -s /etc/systemd/system/photobox-boot-debug.service /etc/systemd/system/sysinit.target.wants/photobox-boot-debug.service
 ln -s /etc/systemd/system/photobox-regulatory-domain.service /etc/systemd/system/multi-user.target.wants/photobox-regulatory-domain.service
