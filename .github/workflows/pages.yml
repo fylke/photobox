@@ -48,7 +48,7 @@ jobs:
           mkdir -p docs/installer
           cp -r installer/dist/* docs/installer/
 
-      - name: Stage latest prerelease image
+      - name: Stage latest release image
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -56,9 +56,9 @@ jobs:
         run: |
           set -euo pipefail
           tag="$(gh api --paginate --slurp "repos/${GH_REPO}/releases?per_page=100" \
-            | jq -r '[.[][] | select(.prerelease and (.draft | not))] | sort_by(.published_at) | last | .tag_name // empty')"
+            | jq -r '[.[][] | select(.draft | not)] | sort_by(.published_at) | last | .tag_name // empty')"
           if [ -z "$tag" ]; then
-            echo "No published prerelease is available; no image will be staged."
+            echo "No published release is available; no image will be staged."
             exit 0
           fi
           mkdir -p release-image

@@ -27,7 +27,7 @@ Open `http://localhost:8000`. The local-host path does not create a Wi-Fi hotspo
 
 ## Raspberry Pi image
 
-Each prerelease publishes a Photobox image as a GitHub Release asset. The web installer prepares a configured image locally in your browser; Raspberry Pi Imager writes it to your SD card.
+Each pushed `v*` tag publishes a Photobox image as a GitHub Release asset. Tags with a hyphen suffix (such as `v0.1.0-rc1`) are marked as prereleases; tags without one are published as stable releases. The web installer uses the most recently published release, whether stable or prerelease, and prepares a configured image locally in your browser; Raspberry Pi Imager writes it to your SD card.
 
 **To set up a Photobox booth:**
 1. Open the [Photobox Web Installer](https://fylke.github.io/photobox/installer)
@@ -38,7 +38,7 @@ Each prerelease publishes a Photobox image as a GitHub Release asset. The web in
 
 The image includes Photobox and is pre-configured for the first-boot setup network. See [First Boot and Pairing](docs/first-boot-and-pairing.md) for the full setup walkthrough. The first-boot hotspot and web installer have not yet been validated on physical hardware.
 
-The **Clean up old prerelease images** workflow runs automatically after successful image publication and website deployment, and maintainers can also run it manually from GitHub Actions. It keeps all assets on the two most recently published prereleases. Other prereleases become eligible for removal of `.img.xz` and `SHA256SUMS` assets seven days after publication; their releases, tags, and other assets remain intact. Cleanup only runs on those triggers, not as soon as the grace period expires. Old image download links will stop working. Cleanup refuses to run if the newest prerelease has no image; stable releases and draft releases are not changed. CI build artifacts have their own 30-day retention.
+The **Clean up old release images** workflow runs automatically after successful image publication and website deployment, and maintainers can also run it manually from GitHub Actions. It keeps all assets on the two most recently published releases, counting stable releases and prereleases together. Other releases become eligible for removal of `.img.xz` and `SHA256SUMS` assets seven days after publication; their releases, tags, and other assets remain intact. Cleanup only runs on those triggers, not as soon as the grace period expires. Old image download links will stop working. Cleanup refuses to run if the newest release has no image; draft releases are not changed. CI build artifacts have their own 30-day retention.
 
 For generic DSLR still capture through libgphoto2, set the camera to capture JPEG and set `PHOTOBOX_CAMERA=gphoto2`. The app uses the configured V4L2 webcam for preview and as a capture fallback when available. This initial adapter does not claim DSLR live preview. Exact camera-model compatibility has not been physically validated.
 

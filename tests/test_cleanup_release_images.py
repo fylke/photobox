@@ -29,7 +29,7 @@ def asset(asset_id, name):
     return {"id": asset_id, "name": name}
 
 
-def test_cleanup_keeps_two_newest_and_deletes_only_old_prerelease_images(monkeypatch):
+def test_cleanup_keeps_two_newest_across_stable_and_prereleases(monkeypatch):
     responses = {
         "repos/owner/repo/releases?per_page=100": [
             [
@@ -44,6 +44,9 @@ def test_cleanup_keeps_two_newest_and_deletes_only_old_prerelease_images(monkeyp
         ],
         "repos/owner/repo/releases/2/assets?per_page=100": [
             [asset(20, "new.img.xz"), asset(21, "SHA256SUMS")]
+        ],
+        "repos/owner/repo/releases/3/assets?per_page=100": [
+            [asset(30, "stable.img.xz"), asset(31, "SHA256SUMS")]
         ],
         "repos/owner/repo/releases/1/assets?per_page=100": [
             [asset(10, "old.img.xz"), asset(11, "SHA256SUMS")],
@@ -64,6 +67,8 @@ def test_cleanup_keeps_two_newest_and_deletes_only_old_prerelease_images(monkeyp
     monkeypatch.setattr(subprocess, "run", run)
     cleanup("owner/repo")
     assert deleted == [
+        "repos/owner/repo/releases/assets/50",
+        "repos/owner/repo/releases/assets/51",
         "repos/owner/repo/releases/assets/10",
         "repos/owner/repo/releases/assets/11",
         "repos/owner/repo/releases/assets/12",
@@ -73,7 +78,10 @@ def test_cleanup_keeps_two_newest_and_deletes_only_old_prerelease_images(monkeyp
 def test_cleanup_refuses_when_newest_has_no_image(monkeypatch):
     responses = {
         "repos/owner/repo/releases?per_page=100": [
-            [release(2, "2024-02-01T00:00:00Z"), release(1, "2024-01-01T00:00:00Z")]
+            [
+                release(2, "2024-02-01T00:00:00Z", prerelease=False),
+                release(1, "2024-01-01T00:00:00Z"),
+            ]
         ],
         "repos/owner/repo/releases/2/assets?per_page=100": [[asset(21, "SHA256SUMS")]],
         "repos/owner/repo/releases/1/assets?per_page=100": [[asset(10, "old.img.xz")]],
@@ -135,12 +143,15 @@ def test_cleanup_validates_all_asset_ids_before_deleting(monkeypatch):
         ("2024-03-24T23:59:59Z", True),
     ],
 )
-def test_cleanup_applies_seven_day_grace_period(monkeypatch, published_at, should_delete):
+@pytest.mark.parametrize("prerelease", [True, False])
+def test_cleanup_applies_seven_day_grace_period(
+    monkeypatch, published_at, should_delete, prerelease
+):
     responses = {
         "repos/owner/repo/releases?per_page=100": [[
             release(3, "2024-04-01T00:00:00Z"),
             release(2, "2024-03-31T00:00:00Z"),
-            release(1, published_at),
+            release(1, published_at, prerelease=prerelease),
         ]],
         "repos/owner/repo/releases/3/assets?per_page=100": [[asset(30, "new.img.xz")]],
         "repos/owner/repo/releases/2/assets?per_page=100": [[asset(20, "rollback.img.xz")]],

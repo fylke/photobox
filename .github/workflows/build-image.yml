@@ -11,9 +11,7 @@ on:
       - "src/**"
       - "tools/**"
     tags:
-      - "v*-alpha*"
-      - "v*-beta*"
-      - "v*-rc*"
+      - "v*"
 
 permissions:
   contents: read
@@ -118,9 +116,7 @@ jobs:
           retention-days: 30
 
   publish:
-    if: >-
-      startsWith(github.ref, 'refs/tags/v') &&
-      (contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc'))
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: package
     runs-on: ubuntu-latest
     permissions:
@@ -147,16 +143,20 @@ jobs:
           test "${#images[@]}" -eq 1
           (cd dist && sha256sum --check SHA256SUMS)
           xz --test "${images[0]}"
-      - name: Publish hardware-testing prerelease
+      - name: Publish image release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          prerelease=false
+          case "$GITHUB_REF_NAME" in
+            v*-*) prerelease=true ;;
+          esac
           gh release create "${GITHUB_REF_NAME}" \
             dist/*.img.xz dist/SHA256SUMS dist/photobox-image-capabilities.json \
             --title "Photobox ${GITHUB_REF_NAME}" \
-            --notes "Pre-release for controlled hardware testing only. CI image build succeeded, but physical Pi, camera, network, and two-phone validation remain outstanding. Use a disposable SD card and isolated network. See docs/hardware-validation-m2.md." \
-            --prerelease
+            --notes "CI image build succeeded, but physical Pi, camera, network, and two-phone validation remain outstanding. Use a disposable SD card and isolated network. See docs/hardware-validation-m2.md." \
+            --prerelease="$prerelease"
       - name: Generate Imager catalogue
         shell: bash
         run: |

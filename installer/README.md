@@ -21,6 +21,6 @@ npm run build
 
 The HTML entrypoint, `index.html`, is tracked in Git and used directly by local and CI builds.
 
-The Pages workflows stage one verified prerelease base image and its manifest under `installer/image`. Older releases without capability metadata do not offer boot debug. A newly built release is required before boot debug becomes available on the live page. GitHub Pages limits published sites to 1 GB and has a soft bandwidth limit of 100 GB per month.
+The Pages workflows stage one verified base image and its manifest under `installer/image`, using the most recently published release, whether stable or prerelease. Older releases without capability metadata do not offer boot debug. A newly built release is required before boot debug becomes available on the live page. GitHub Pages limits published sites to 1 GB and has a soft bandwidth limit of 100 GB per month.
 
 Image preparation and first-boot behavior still require physical Raspberry Pi validation.

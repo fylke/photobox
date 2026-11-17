@@ -121,7 +121,7 @@ Selected in the web installer during image preparation. See `installer/src/confi
 - **Language:** Bash scripts
 - **CI:** GitHub Actions on ARM runner
 - **Output:** Compressed `.img.xz` with SHA256 checksums
-- **Retention:** 30 days (pre-release artifacts)
+- **Retention:** 30 days for CI artifacts; release-image cleanup keeps the two newest releases and gives older releases a seven-day grace period
 
 ## See Also
 

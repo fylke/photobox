@@ -1,4 +1,4 @@
-name: Clean up old prerelease images
+name: Clean up old release images
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-      - name: Remove old prerelease image assets
+      - name: Remove old release image assets
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

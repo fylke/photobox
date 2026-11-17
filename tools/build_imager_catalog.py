@@ -34,7 +34,7 @@ def build_catalog(image: Path, repository: str, tag: str) -> dict[str, object]:
         },
         "os_list": [{
             "name": f"Photobox {tag}",
-            "description": "Photobox for Raspberry Pi 4 and 5 (hardware testing prerelease)",
+            "description": "Photobox for Raspberry Pi 4 and 5 (hardware validation pending)",
             "url": url,
             "extract_size": image_size,
             "extract_sha256": image_hash.hexdigest(),
