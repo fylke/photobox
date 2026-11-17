@@ -19,6 +19,8 @@ npm run build
 
 `npm run dev` starts the Vite development server. To exercise image preparation locally, stage an image and its `SHA256SUMS` with `python3 tools/stage_installer_image.py RELEASE_DIR installer/public/image` from the repository root. Add `photobox-image-capabilities.json` with `{"boot_debug": true}` only for an image containing the boot-debug service.
 
+The HTML entrypoint, `index.html`, is tracked in Git and used directly by local and CI builds.
+
 The Pages workflows stage one verified prerelease base image and its manifest under `installer/image`. Older releases without capability metadata do not offer boot debug. A newly built release is required before boot debug becomes available on the live page. GitHub Pages limits published sites to 1 GB and has a soft bandwidth limit of 100 GB per month.
 
 Image preparation and first-boot behavior still require physical Raspberry Pi validation.
