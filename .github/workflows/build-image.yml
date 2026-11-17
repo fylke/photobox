@@ -184,3 +184,9 @@ jobs:
           path: docs
       - id: deploy
         uses: actions/deploy-pages@v4
+
+  cleanup:
+    needs: publish
+    permissions:
+      contents: write
+    uses: ./.github/workflows/cleanup-images.yml

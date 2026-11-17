@@ -2,7 +2,7 @@ import json
 import os
 import re
 import subprocess
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 
 def api_pages(endpoint: str) -> list[dict]:
@@ -46,13 +46,17 @@ def cleanup(repository: str) -> None:
             f"Newest prerelease {newest['tag_name']} has no .img.xz image; refusing cleanup."
         )
 
+    cutoff = datetime.now(UTC) - timedelta(days=7)
     targets = [
         (release["tag_name"], asset["name"], asset["id"])
-        for release, assets in assets_by_release[1:]
+        for release, assets in assets_by_release[2:]
+        if datetime.fromisoformat(release["published_at"]) <= cutoff
         for asset in assets
         if asset["name"].endswith(".img.xz") or asset["name"] == "SHA256SUMS"
     ]
-    print(f"Keeping all assets for newest prerelease {newest['tag_name']}.", flush=True)
+    kept_tags = ", ".join(release["tag_name"] for release, _ in assets_by_release[:2])
+    print(f"Keeping all assets for newest prereleases: {kept_tags}.", flush=True)
+    print(f"Only removing images from releases published on or before {cutoff.isoformat()}.")
     for tag, name, asset_id in targets:
         if not isinstance(asset_id, int) or isinstance(asset_id, bool) or asset_id <= 0:
             raise ValueError(f"Invalid asset ID for {tag}: {name}")
