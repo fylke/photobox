@@ -138,9 +138,15 @@ const ImageSelectScreen: React.FC<ImageSelectScreenProps> = ({
       >
         <strong>How to get the image:</strong>
         <ol style={{ marginTop: '0.5rem', marginBottom: 0, paddingLeft: '1.5rem' }}>
-          <li>Go to the latest release at https://github.com/fylke/photobox/releases</li>
-          <li>Download the <code style={{ backgroundColor: 'rgba(0,0,0,0.1)', padding: '0.2rem 0.4rem', borderRadius: '0.25rem' }}>image_*.img.xz</code> file</li>
-          <li>Come back here and select it</li>
+          <li>Go to <a href="https://github.com/fylke/photobox/releases" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>GitHub Releases</a></li>
+          <li>Find the latest release</li>
+          <li>Download <strong>both files</strong>:
+            <ul style={{ marginTop: '0.25rem', marginBottom: 0, paddingLeft: '1.5rem' }}>
+              <li><code style={{ backgroundColor: 'rgba(0,0,0,0.1)', padding: '0.2rem 0.4rem', borderRadius: '0.25rem' }}>photobox-*-arm64.img.xz</code> for Pi 4 or Pi 5</li>
+              <li><code style={{ backgroundColor: 'rgba(0,0,0,0.1)', padding: '0.2rem 0.4rem', borderRadius: '0.25rem' }}>photobox-*-armv7l.img.xz</code> for Pi 3</li>
+            </ul>
+          </li>
+          <li>Select the appropriate file for your Raspberry Pi</li>
         </ol>
       </div>
 
