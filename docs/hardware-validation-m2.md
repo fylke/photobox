@@ -6,7 +6,7 @@ This is the end-to-end acceptance run for a real Photobox Pi, webcam, and two ph
 
 ## Equipment and preparation
 
-- Raspberry Pi 4 or 5 with the supported Photobox OS image.
+- Raspberry Pi 3 with the 64-bit Photobox OS image (primary validation target); Pi 4 and 5 can be tested separately.
 - V4L2-compatible USB/CSI webcam and any required camera permissions.
 - A separate computer with Raspberry Pi Imager and an SD-card reader.
 - Two phones or one phone and one laptop with current browsers.

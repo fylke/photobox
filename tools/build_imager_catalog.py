@@ -27,6 +27,7 @@ def build_catalog(image: Path, repository: str, tag: str) -> dict[str, object]:
     return {
         "imager": {
             "devices": [
+                {"name": "Raspberry Pi 3", "tags": ["pi3-64bit"], "matching_type": "inclusive"},
                 {"name": "Raspberry Pi 5", "tags": ["pi5-64bit"], "matching_type": "inclusive"},
                 {"name": "Raspberry Pi 4", "tags": ["pi4-64bit"], "matching_type": "inclusive"},
                 {"name": "No filtering", "tags": [], "matching_type": "inclusive"},
@@ -34,7 +35,7 @@ def build_catalog(image: Path, repository: str, tag: str) -> dict[str, object]:
         },
         "os_list": [{
             "name": f"Photobox {tag}",
-            "description": "Photobox for Raspberry Pi 4 and 5 (hardware validation pending)",
+            "description": "Photobox for Raspberry Pi 3, 4 and 5 (hardware validation pending)",
             "url": url,
             "extract_size": image_size,
             "extract_sha256": image_hash.hexdigest(),
@@ -42,7 +43,7 @@ def build_catalog(image: Path, repository: str, tag: str) -> dict[str, object]:
             "image_download_sha256": compressed_hash.hexdigest(),
             "release_date": date.today().isoformat(),
             "init_format": "systemd",
-            "devices": ["pi4-64bit", "pi5-64bit"],
+            "devices": ["pi3-64bit", "pi4-64bit", "pi5-64bit"],
             "capabilities": [],
         }],
     }

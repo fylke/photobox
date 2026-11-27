@@ -2,7 +2,7 @@
 
 > **Status:** First boot setup, Wi-Fi, and phone pairing require physical Raspberry Pi validation. Use a disposable card and isolated test network. Maintainers: see [Hardware Validation](hardware-validation-m2.md).
 
-You need a Raspberry Pi 4 or 5, a microSD card and reader, the [Photobox Web Installer](https://fylke.github.io/photobox/installer), Raspberry Pi Imager, a phone, and the Wi-Fi country where the Pi will operate.
+You need a Raspberry Pi 3, 4, or 5, a microSD card and reader, the [Photobox Web Installer](https://fylke.github.io/photobox/installer), Raspberry Pi Imager, a phone, and the Wi-Fi country where the Pi will operate. Pi 3 is the primary hardware-validation target.
 
 ## Prepare and write the image
 

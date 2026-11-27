@@ -18,9 +18,6 @@ permissions:
 
 jobs:
   build:
-    strategy:
-      matrix:
-        arch: [arm64, armv7l]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
     steps:
@@ -40,8 +37,6 @@ jobs:
           path: pi-gen
 
       - name: Prepare minimal image build
-        env:
-          ARCH: ${{ matrix.arch }}
         run: |
           mkdir -p pi-gen/photobox/00-photobox/files
           cp image/photobox-stage/EXPORT_IMAGE pi-gen/photobox/EXPORT_IMAGE
@@ -64,7 +59,7 @@ jobs:
           IMG_NAME='photobox'
           TARGET_HOSTNAME='photobox'
           RELEASE='trixie'
-          ARCH='${ARCH}'
+          ARCH='arm64'
           STAGE_LIST='stage0 stage1 photobox'
           DEPLOY_COMPRESSION='xz'
           ENABLE_SSH=0
@@ -79,29 +74,26 @@ jobs:
             e2fsprogs file gpg grep kmod libcap2-bin parted pigz quilt \
             qemu-user-binfmt rsync xxd xz-utils zerofree zip
 
-      - name: Build minimal generic Raspberry Pi OS image (${{ matrix.arch }})
+      - name: Build minimal 64-bit Raspberry Pi OS image
         working-directory: pi-gen
         run: sudo ./build.sh -c photobox-config
 
       - name: Verify and checksum generic image
-        env:
-          ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           mapfile -t images < <(find pi-gen/deploy -maxdepth 1 -name '*.img.xz' -print)
           test "${#images[@]}" -eq 1
           image="${images[0]}"
           xz --test "$image"
-          mkdir -p build-output/$ARCH
-          # Rename image to include architecture
+          mkdir -p build-output
           base=$(basename "$image" .img.xz)
-          cp "$image" "build-output/$ARCH/${base}-${ARCH}.img.xz"
-          (cd build-output/$ARCH && sha256sum "${base}-${ARCH}.img.xz" > SHA256SUMS)
+          cp "$image" "build-output/${base}-arm64.img.xz"
+          (cd build-output && sha256sum "${base}-arm64.img.xz" > SHA256SUMS)
 
       - uses: actions/upload-artifact@v4
         with:
-          name: photobox-image-${{ matrix.arch }}
-          path: build-output/${{ matrix.arch }}/*
+          name: photobox-image-arm64
+          path: build-output/*
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
@@ -112,31 +104,16 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: photobox-image-arm64
+          path: dist
 
-      - name: Merge images and checksums
+      - name: Verify image and checksum
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist
-          for arch in arm64 armv7l; do
-            if [ -d "artifacts/photobox-image-$arch" ]; then
-              cp artifacts/photobox-image-$arch/*.img.xz dist/ || true
-              cat artifacts/photobox-image-$arch/SHA256SUMS >> dist/SHA256SUMS.tmp || true
-            fi
-          done
-          if [ -f dist/SHA256SUMS.tmp ]; then
-            sort dist/SHA256SUMS.tmp > dist/SHA256SUMS
-            rm dist/SHA256SUMS.tmp
-          fi
-
-      - name: Verify and checksum all images
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -f dist/SHA256SUMS ]; then
-            (cd dist && sha256sum --check SHA256SUMS)
-          fi
+          mapfile -t images < <(find dist -maxdepth 1 -type f -name '*.img.xz' -print)
+          test "${#images[@]}" -eq 1
+          (cd dist && sha256sum --check SHA256SUMS)
           printf '{"boot_debug": true}\n' > dist/photobox-image-capabilities.json
 
       - uses: actions/upload-artifact@v4
@@ -172,7 +149,7 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -t images < <(find dist -maxdepth 1 -type f -name '*.img.xz' -print)
-          test "${#images[@]}" -ge 1
+          test "${#images[@]}" -eq 1
           (cd dist && sha256sum --check SHA256SUMS)
           for image in "${images[@]}"; do
             xz --test "$image"

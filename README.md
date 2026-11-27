@@ -4,7 +4,7 @@ Photobox is a local photo-booth daemon with a browser-based capture screen.
 
 ## Set up Photobox
 
-The recommended way to set up Photobox is on a **Raspberry Pi 4 or 5** with the included photo booth experience. Follow [First Boot and Pairing](docs/first-boot-and-pairing.md) for the walkthrough. Physical hardware validation is still in progress.
+The image is intended for a **Raspberry Pi 3, 4, or 5**, with Pi 3 as the primary hardware-validation target. Follow [First Boot and Pairing](docs/first-boot-and-pairing.md) for the walkthrough. Physical hardware validation is still outstanding.
 
 ### Advanced: Run on this computer
 
@@ -27,7 +27,7 @@ Open `http://localhost:8000`. The local-host path does not create a Wi-Fi hotspo
 
 ## Raspberry Pi image
 
-Each pushed `v*` tag publishes a Photobox image as a GitHub Release asset. Tags with a hyphen suffix (such as `v0.1.0-rc1`) are marked as prereleases; tags without one are published as stable releases. The web installer uses the most recently published release, whether stable or prerelease, and prepares a configured image locally in your browser; Raspberry Pi Imager writes it to your SD card.
+Each pushed `v*` tag publishes one 64-bit Photobox image as a GitHub Release asset. Tags with a hyphen suffix (such as `v0.1.0-rc1`) are marked as prereleases; tags without one are published as stable releases. The web installer uses the most recently published release, whether stable or prerelease, and prepares a configured image locally in your browser; Raspberry Pi Imager writes it to your SD card.
 
 **To set up a Photobox booth:**
 1. Open the [Photobox Web Installer](https://fylke.github.io/photobox/installer)

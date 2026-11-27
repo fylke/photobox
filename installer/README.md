@@ -1,6 +1,6 @@
 # Photobox image preparation
 
-The [web installer](https://fylke.github.io/photobox/installer/) prepares a configured Raspberry Pi image locally in the browser. Use Raspberry Pi Imager's **Use custom** option to write the resulting `.img` file to an SD card.
+The [web installer](https://fylke.github.io/photobox/installer/) prepares a configured 64-bit image intended for Raspberry Pi 3, 4, and 5 locally in the browser. Pi 3 is the primary hardware-validation target. Use Raspberry Pi Imager's **Use custom** option to write the resulting `.img` file to an SD card.
 
 Select the Wi-Fi country and optionally enable persistent boot debug before preparing the image. Debug output appears on the boot console where available; journal output is saved to the card's boot partition, capped at 200 MiB. The logs can contain sensitive information. See [First Boot and Pairing](../docs/first-boot-and-pairing.md) for retrieval, limitations, and disabling debug.
 

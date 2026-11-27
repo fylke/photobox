@@ -19,6 +19,8 @@ def test_imager_catalog_contains_image_metadata(tmp_path):
     assert entry["extract_sha256"] == hashlib.sha256(content).hexdigest()
     assert entry["image_download_sha256"] == hashlib.sha256(image.read_bytes()).hexdigest()
     assert entry["init_format"] == "systemd"
+    pi3 = next(device for device in catalog["imager"]["devices"] if device["name"] == "Raspberry Pi 3")
+    assert set(pi3["tags"]) & set(entry["devices"])
 
 
 def test_imager_catalog_rejects_incomplete_image(tmp_path):

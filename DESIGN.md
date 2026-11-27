@@ -79,7 +79,7 @@ The booth detects what is present at startup and on hot-plug, and runs in the be
 | Full | DSLR + webcam for preview | screen | LEDs/flash, buttons, encoder | Webcam preview, DSLR capture, light sync |
 | Headless DSLR | DSLR | none | optional | Phone preview or no preview; control via button or phone |
 
-Target hardware: Raspberry Pi 4 or 5 (Pi 3 supported at reduced preview resolution/frame rate).
+Target hardware: Raspberry Pi 3, 4 or 5, using one 64-bit image. Pi 3 is the primary physical-validation target; preview performance and hardware compatibility remain to be validated.
 
 ### 4.1 Assembly and setup guide (#20)
 

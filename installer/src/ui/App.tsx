@@ -56,7 +56,7 @@ const App: React.FC = () => {
     <main style={{ maxWidth: '600px', padding: '2rem', background: 'var(--bg-primary)', borderRadius: '1rem', boxShadow: 'var(--shadow-lg)' }}>
       <h1 style={{ marginBottom: '1rem', color: 'var(--primary)' }}>Photobox image</h1>
       <p style={{ marginBottom: '1rem' }}>
-        Prepare an image for a Raspberry Pi 4 or 5, then write it with Raspberry Pi Imager.
+        Prepare a 64-bit image intended for Raspberry Pi 3, 4, or 5, then write it with Raspberry Pi Imager.
       </p>
       <label htmlFor="country" style={{ display: 'block', marginBottom: '0.5rem' }}>Wi-Fi country</label>
       <select id="country" value={country} onChange={(event) => setCountry(event.target.value)} disabled={working}>

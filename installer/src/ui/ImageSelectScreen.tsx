@@ -142,11 +142,11 @@ const ImageSelectScreen: React.FC<ImageSelectScreenProps> = ({
           <li>Find the latest release</li>
           <li>Download <strong>both files</strong>:
             <ul style={{ marginTop: '0.25rem', marginBottom: 0, paddingLeft: '1.5rem' }}>
-              <li><code style={{ backgroundColor: 'rgba(0,0,0,0.1)', padding: '0.2rem 0.4rem', borderRadius: '0.25rem' }}>photobox-*-arm64.img.xz</code> for Pi 4 or Pi 5</li>
-              <li><code style={{ backgroundColor: 'rgba(0,0,0,0.1)', padding: '0.2rem 0.4rem', borderRadius: '0.25rem' }}>photobox-*-armv7l.img.xz</code> for Pi 3</li>
+              <li>The <code style={{ backgroundColor: 'rgba(0,0,0,0.1)', padding: '0.2rem 0.4rem', borderRadius: '0.25rem' }}>-arm64.img.xz</code> image for Pi 3, 4, or 5</li>
+              <li><code>SHA256SUMS</code></li>
             </ul>
           </li>
-          <li>Select the appropriate file for your Raspberry Pi</li>
+          <li>Select the image file</li>
         </ol>
       </div>
 
